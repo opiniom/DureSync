@@ -20,6 +20,7 @@ class User(Base):
     ban_reason = Column(String(200), nullable=True)   # 정지 사유 (is_active=False 일 때)
     banned_at = Column(DateTime, nullable=True)
     withdrawn_at = Column(DateTime, nullable=True)    # 탈퇴한 시각. 값이 있으면 개인정보를 모두 지운 '번호 보존용' 빈 계정이다 (번호가 다시 쓰이면 옛 로그인 토큰이 남의 계정으로 통할 수 있어서 행 자체는 남긴다)
+    announce_seen = Column(Integer, default=0, nullable=False, server_default="0")   # 공지사항: 여기까지(공지 번호) 확인했어요
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # 1:N 관계 (사용자의 코드 실행 히스토리)
@@ -370,7 +371,7 @@ class WithdrawalLog(Base):
 
 
 class Announcement(Base):
-    """전체 공지 (보낸 기록). 보낼 때 모든 사용자에게 알림으로도 전달된다."""
+    """공지사항: 운영자가 올리면 모든 사용자의 '공지사항' 목록에 올라간다. (알림함과는 따로 보관 — 알림은 내 일정·초대·소식, 공지는 서비스 전체 안내)"""
     __tablename__ = "announcements"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -380,6 +381,35 @@ class Announcement(Base):
     sent_count = Column(Integer, default=0, nullable=False)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
+class Inquiry(Base):
+    """1:1 문의: 사용자가 관리자에게 불편한 점·건의를 남기고, 관리자가 답하면 알림으로 돌아온다."""
+    __tablename__ = "inquiries"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    category = Column(String(12), default="etc", nullable=False)       # bug(오류) | idea(건의) | account(계정) | etc(기타)
+    title = Column(String(120), nullable=False)
+    status = Column(String(10), default="open", nullable=False, index=True)   # open(접수) | progress(처리 중) | done(완료)
+    page = Column(String(60), nullable=True)                           # 문의를 남긴 화면 (자동)
+    client = Column(String(200), nullable=True)                        # 웹/앱 · 브라우저 · 화면 크기 (자동)
+    last_by = Column(String(6), default="user", nullable=False)        # 마지막으로 글을 남긴 쪽: user | admin
+    user_seen_at = Column(DateTime, nullable=True)                     # 사용자가 마지막으로 이 문의를 열어 본 시각
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
+class InquiryMessage(Base):
+    """문의 한 건 안의 대화 (첫 글 = 문의 내용)"""
+    __tablename__ = "inquiry_messages"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    inquiry_id = Column(Integer, ForeignKey("inquiries.id", ondelete="CASCADE"), nullable=False, index=True)
+    sender = Column(String(6), nullable=False)                         # user | admin
+    sender_id = Column(Integer, nullable=True)
+    text = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 class UserProfile(Base):

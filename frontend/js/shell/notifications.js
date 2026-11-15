@@ -10,6 +10,7 @@ var NT_KIND = {
   event:{c:'#F59E0B', svg:'<path d="M8 4h8v5a4 4 0 0 1-8 0Z"/><path d="M8 6H5v1.5A3 3 0 0 0 8 10.5M16 6h3v1.5a3 3 0 0 1-3 3M12 13v4M8.5 20h7"/>'},
   follow:{c:'#14B8A6', svg:'<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M19 8v6M16 11h6"/>'},
   notice:{c:'#EF4444', svg:'<path d="M4 10v4a1 1 0 0 0 1 1h2l5 4V5L7 9H5a1 1 0 0 0-1 1Z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/>'},
+  inquiry:{c:'#14B8A6', svg:'<path d="M4 5.5h16a1 1 0 0 1 1 1V16a1 1 0 0 1-1 1h-8l-5 3.5V17H4a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1Z"/><path d="M8 10h8M8 13h5"/>'},
   ai:{c:'#6366F1', svg:'<path d="M12 3.5 13.9 9l5.6 1.9-5.6 1.9L12 18.5l-1.9-5.7L4.5 10.9 10.1 9Z"/><path d="M18.5 3.5v3M17 5h3"/>'}
 };
 function ntKind(cat){ return NT_KIND[cat] || NT_KIND.ai; }
@@ -148,7 +149,7 @@ async function loadNotifications(announce){
 function ntStartPolling(){
   if(NT.timer) return;
   var ntTick = 0;
-  NT.timer = setInterval(function(){ ntTick++; if(!document.hidden && authToken && (!LIVE.ok || ntTick % 3 === 0)) loadNotifications(true); }, 20000);   // 실시간 연결이 있으면 가끔만
+  NT.timer = setInterval(function(){ ntTick++; if(!document.hidden && authToken && (!LIVE.ok || ntTick % 3 === 0)){ loadNotifications(true); if(!LIVE.ok && typeof loadAnnouncements === 'function') loadAnnouncements(true); } }, 20000);   // 실시간 연결이 있으면 가끔만
   document.addEventListener('visibilitychange', function(){ if(!document.hidden && authToken) loadNotifications(true); });
 }
 async function ntMark(id){
@@ -197,6 +198,18 @@ function dismissToast(elOrBtn){
   t.classList.add('out');
   setTimeout(function(){ t.remove(); }, 320);
 }
+/* 화면의 빈 곳(또는 아무 곳)을 누르면 떠 있는 실시간 알림 팝업이 모두 사라진다. 하나하나 X 를 누르지 않아도 된다.
+   · 지워지는 건 팝업뿐 — 알림 기록은 알림함에 그대로 남아 있다.
+   · 누르기 시작하는 순간(pointerdown)에 처리하므로, 그 누름으로 새로 뜨는 팝업(예: 저장됨)은 지워지지 않는다.
+   · 팝업 자체를 누르는 건 제외(팝업을 눌러 이동하는 동작은 그대로) */
+function dismissAllToasts(){
+  var st = document.getElementById('toastStack'); if(!st) return;
+  Array.prototype.forEach.call(st.querySelectorAll('.toast:not(.out)'), function(t){ dismissToast(t); });
+}
+document.addEventListener('pointerdown', function(e){
+  if(e.target && e.target.closest && e.target.closest('.toast')) return;
+  dismissAllToasts();
+}, true);
 function pushToast(icon, title, desc, opts){
   opts = opts || {};
   if(opts.category && PST.pref === 'dnd') return;      // 방해금지: 새 알림 팝업은 띄우지 않는다 (목록에는 쌓임)
@@ -226,4 +239,3 @@ function pushToast(icon, title, desc, opts){
   stack.appendChild(t); arm(t);
   var all = stack.querySelectorAll('.toast:not(.out)'); if(all.length > 4) dismissToast(all[0]);
 }
-

@@ -74,6 +74,12 @@ def _add_missing_columns(sync_conn):
     for name, ddl in (("is_admin", "BOOLEAN NOT NULL DEFAULT 0"), ("ban_reason", "VARCHAR(200)"), ("banned_at", "DATETIME"), ("withdrawn_at", "DATETIME")):
         if user_cols and name not in user_cols:
             sync_conn.execute(text(f"ALTER TABLE users ADD COLUMN {name} {ddl}"))
+    if user_cols and "announce_seen" not in user_cols:                  # 공지사항 '여기까지 읽음' — 이미 있는 사용자는 지금까지의 공지를 읽은 것으로 시작
+        sync_conn.execute(text("ALTER TABLE users ADD COLUMN announce_seen INTEGER NOT NULL DEFAULT 0"))
+        try:
+            sync_conn.execute(text("UPDATE users SET announce_seen = (SELECT COALESCE(MAX(id), 0) FROM announcements)"))
+        except Exception:
+            pass
     pj_cols = {row[1] for row in sync_conn.execute(text("PRAGMA table_info(projects)"))}
     for name, ddl in (("deleted_at", "DATETIME"), ("deleted_by", "INTEGER"), ("delete_reason", "VARCHAR(200)")):      # 관리자 휴지통
         if pj_cols and name not in pj_cols:

@@ -6,6 +6,7 @@
   · calendar      일정 추가·수정·삭제 · notes     회의록 추가·수정·삭제
   · projects      프로젝트/팀원 변화   · presence  팀원의 온라인·자리비움·방해금지·오프라인
   · prefs         내 설정이 다른 기기(웹/앱)에서 바뀜 · memos  워크스페이스 코드 줄 메모
+  · announce      새 공지사항(접속 중인 모두에게)
   · admin         (관리자에게만) 가입·프로젝트·감사 로그·신고·커뮤니티 글·탈퇴 기록이 바뀜 → 열려 있는 관리자 페이지가 그 목록을 다시 불러온다
 DB 에 커밋된 뒤에만 보내므로(SQLAlchemy 이벤트), 라우터 코드를 일일이 고치지 않아도 모든 저장 경로가 포함된다.
 연결이 끊기면 화면은 예전처럼 폴링으로 돌아간다.
@@ -131,7 +132,7 @@ async def publish_presence(db, user_id: int, status: Optional[str] = None) -> No
 
 # ---------- 커밋 후 푸시 (SQLAlchemy 이벤트) ----------
 def _collect(session: Session, flush_context=None) -> None:
-    from models import (AccessLog, AuditLog, CalendarEvent, ChatMessage, CommunityPost, CommunityReport, Follow, MeetingDoc, Notification, Project, ProjectFile,
+    from models import (Inquiry, InquiryMessage, Announcement, AccessLog, AuditLog, CalendarEvent, ChatMessage, CommunityPost, CommunityReport, Follow, MeetingDoc, Notification, Project, ProjectFile,
                         ProjectMember, User, UserPref, CodeMemo, WithdrawalLog)
     bag = session.info.setdefault("live", set())
     for obj in list(session.new) + list(session.deleted):             # 관리자 페이지 실시간 갱신용 (바뀐 목록 이름만 알린다). 사용자 정보의 잦은 수정(접속 시각 등)은 제외
@@ -153,6 +154,10 @@ def _collect(session: Session, flush_context=None) -> None:
     for obj in list(session.new) + list(session.dirty) + list(session.deleted):
         if isinstance(obj, Notification):
             bag.add(("notification", obj.user_id, None, None))
+        elif isinstance(obj, Announcement):                # 새 공지(또는 삭제): 접속 중인 모든 사람에게 알린다
+            bag.add(("announce", None, None, None))
+        elif isinstance(obj, (Inquiry, InquiryMessage)):   # 새 문의·답변·상태 변경: 접속 중인 관리자 화면에 알린다 (사용자에게는 알림으로 간다)
+            bag.add(("admin", None, None, "inquiries"))
         elif isinstance(obj, CodeMemo):                    # 코드 줄 메모가 달리거나 바뀜: 프로젝트 팀원 화면에 알린다
             bag.add(("memos", None, obj.project_id, None))
         elif isinstance(obj, UserPref):                    # 다른 기기에서 내 설정이 바뀜: 내 화면들에만 알린다
@@ -206,6 +211,9 @@ async def _deliver(bag: set) -> None:
                     await hub.send(aud, {"t": "admin", "k": admin_kinds})
             for kind, user_id, project_id, sender in bag:
                 if kind == "admin":
+                    continue
+                if kind == "announce":
+                    await hub.send({uid for uid, conns in hub.conns.items() if conns}, {"t": "announce"})
                     continue
                 targets: Set[int] = set()
                 if user_id:

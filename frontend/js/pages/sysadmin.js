@@ -1,11 +1,12 @@
 /* ---- 관리자 페이지 (/app/admin) ----
    서버가 권한을 직접 확인한다(/api/admin/*). 여기서 메뉴를 숨기는 건 편의일 뿐이다.
    화면: 대시보드 · 사용자 · 신고/콘텐츠 · 프로젝트 · 크롤러 · 공지 · 감사 로그 · 시스템 */
-var SA = { tab:'dash', inited:false, timers:{}, state:{ users:{ q:'', state:'all', page:1 }, posts:{ q:'', state:'all', page:1 }, projects:{ q:'', state:'active', page:1 }, events:{ q:'', page:1 }, audit:{ q:'', page:1, view:'access', aq:'', apage:1 }, reports:{ status:'open' } }, todo:0 };
+var SA = { tab:'dash', inited:false, timers:{}, state:{ inquiries:{ status:'active', page:1, open:null }, users:{ q:'', state:'all', page:1 }, posts:{ q:'', state:'all', page:1 }, projects:{ q:'', state:'active', page:1 }, events:{ q:'', page:1 }, audit:{ q:'', page:1, view:'access', aq:'', apage:1 }, reports:{ status:'open' } }, todo:0 };
 var SA_TABS = [
   { k:'dash', t:'대시보드', i:'<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>' },
   { k:'users', t:'사용자', i:'<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16.5 5.6a3.2 3.2 0 0 1 0 5.8M18 14.4c1.7.6 2.7 2.1 3 4.6"/>' },
   { k:'withdrawals', t:'탈퇴 기록', i:'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/>' },
+  { k:'inquiries', t:'문의', i:'<path d="M4 5.5h16a1 1 0 0 1 1 1V16a1 1 0 0 1-1 1h-8l-5 3.5V17H4a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1Z"/><path d="M8 10h8M8 13h5"/>' },
   { k:'reports', t:'신고', i:'<path d="M5 21V4"/><path d="M5 4h12l-2 4 2 4H5"/>' },
   { k:'posts', t:'커뮤니티', i:'<path d="M20 12a7.5 7.5 0 0 1-10.9 6.7L4 20l1.4-4.3A7.5 7.5 0 1 1 20 12Z"/>' },
   { k:'projects', t:'프로젝트', i:'<path d="M3.5 7.5A2.5 2.5 0 0 1 6 5h3.3l2 2.2H18A2.5 2.5 0 0 1 20.5 9.7v7.8A2.5 2.5 0 0 1 18 20H6a2.5 2.5 0 0 1-2.5-2.5Z"/>' },
@@ -16,7 +17,7 @@ var SA_TABS = [
   { k:'system', t:'시스템', i:'<rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01"/>' }
 ];
 var SA_ACTIONS = { 'user.suspend':'사용자 정지', 'user.unsuspend':'정지 해제', 'user.admin_on':'운영자 지정', 'user.admin_off':'운영자 해제', 'user.delete':'계정 삭제(탈퇴 처리)', 'report.hide':'신고 글 숨김', 'report.delete':'신고 글 삭제', 'report.dismiss':'신고 기각', 'report.restore':'신고 글 복구',
-  'post.pin':'글 고정', 'post.unpin':'글 고정 해제', 'post.hide':'글 숨김', 'post.unhide':'글 숨김 해제', 'post.delete':'글 삭제', 'post.restore':'글 복구', 'project.delete':'프로젝트 삭제(휴지통)', 'project.restore':'프로젝트 복구', 'project.purge':'프로젝트 영구 삭제', 'lang.enable':'언어 공개', 'lang.disable':'언어 비공개', 'lang.install':'언어 설치', 'lang.default':'언어 기본 버전 지정', 'lang.remove':'언어 버전 삭제', 'crawler.run':'크롤러 수동 실행', 'event.delete':'행사 삭제', 'announce.send':'공지 발송', 'gate.login':'관리자 페이지 접속', 'gate.lock':'코드 연속 오입력 잠금', 'gate.setup':'관리자 코드 최초 설정', 'gate.change':'관리자 코드 변경' };
+  'post.pin':'글 고정', 'post.unpin':'글 고정 해제', 'post.hide':'글 숨김', 'post.unhide':'글 숨김 해제', 'post.delete':'글 삭제', 'post.restore':'글 복구', 'project.delete':'프로젝트 삭제(휴지통)', 'project.restore':'프로젝트 복구', 'project.purge':'프로젝트 영구 삭제', 'lang.enable':'언어 공개', 'lang.disable':'언어 비공개', 'lang.install':'언어 설치', 'lang.default':'언어 기본 버전 지정', 'lang.remove':'언어 버전 삭제', 'crawler.run':'크롤러 수동 실행', 'event.delete':'행사 삭제', 'inquiry.reply':'문의 답변', 'inquiry.status':'문의 상태 변경', 'announce.send':'공지 게시', 'announce.delete':'공지 삭제', 'gate.login':'관리자 페이지 접속', 'gate.lock':'코드 연속 오입력 잠금', 'gate.setup':'관리자 코드 최초 설정', 'gate.change':'관리자 코드 변경' };
 var SA_CATS = { question:'질문·과제 도움', recruit:'팀원 구하기', study:'스터디 모집', showcase:'결과물·피드백', share:'정보·후기', free:'자유', comment:'댓글' };
 
 /* ----- 작은 도구들 ----- */
@@ -191,6 +192,7 @@ function saBuild(){
   SA_TABS.forEach(function(t){
     var b = saH('button', { type:'button', 'data-k':t.k, onclick:function(){ saShow(t.k); } }, [saH('span', { class:'sa-ic', html:saSvg(t.i) }), saH('span', { class:'sa-nt', text:t.t })]);
     if(t.k === 'reports') b.appendChild(saH('i', { class:'sa-badge', id:'saReportBadge', hidden:true }));
+    if(t.k === 'inquiries') b.appendChild(saH('i', { class:'sa-badge', id:'saInqBadge', hidden:true }));
     nav.appendChild(b);
   });
   var head = saH('div', { class:'sa-head' }, [
@@ -204,17 +206,17 @@ function saBuild(){
   var rc = document.getElementById('saRole'); if(rc){ var r = saIsSuper() ? saChip('최고관리자', 'super') : saChip('운영자', 'admin'); rc.appendChild(r); }
 }
 function saShow(k){
-  saLeave(); SA.tab = k;
+  saLeave(); SA.tab = k; if(k === 'inquiries') SA.state.inquiries.open = null;
   document.querySelectorAll('#saNav button').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-k') === k); });
   var main = document.getElementById('saMain'); saLoading(main);
-  var fn = { dash:saDash, users:saUsers, withdrawals:saWithdrawals, reports:saReports, posts:saPosts, projects:saProjects, crawler:saCrawler, announce:saAnnounce, audit:saAudit, langs:saLangs, system:saSystem }[k];
+  var fn = { dash:saDash, users:saUsers, withdrawals:saWithdrawals, reports:saReports, inquiries:saInquiries, posts:saPosts, projects:saProjects, crawler:saCrawler, announce:saAnnounce, audit:saAudit, langs:saLangs, system:saSystem }[k];
   saCloseDrawer();
   fn(main);
   window.scrollTo(0, 0);
 }
 /* ----- 실시간 갱신: 서버가 '바뀐 목록 이름'을 알려 주면(웹·앱 어디서 바꿨든) 지금 보고 있는 탭만 조용히 다시 불러온다 ----- */
-var SA_LIVE_TABS = { projects:['projects', 'dash'], users:['users', 'dash', 'withdrawals'], audit:['audit', 'dash'], access:['audit'], reports:['reports', 'dash', 'posts'], posts:['posts', 'dash'], withdrawals:['withdrawals', 'dash', 'users'] };
-var SA_TAB_FN = function(){ return { dash:saDash, users:saUsers, withdrawals:saWithdrawals, reports:saReports, posts:saPosts, projects:saProjects, crawler:saCrawler, audit:saAudit }; };
+var SA_LIVE_TABS = { inquiries:['inquiries', 'dash'], projects:['projects', 'dash'], users:['users', 'dash', 'withdrawals'], audit:['audit', 'dash'], access:['audit'], reports:['reports', 'dash', 'posts'], posts:['posts', 'dash'], withdrawals:['withdrawals', 'dash', 'users'] };
+var SA_TAB_FN = function(){ return { dash:saDash, users:saUsers, withdrawals:saWithdrawals, reports:saReports, inquiries:saInquiries, posts:saPosts, projects:saProjects, crawler:saCrawler, audit:saAudit }; };
 function saLive(kinds){
   var v = document.querySelector('.view.active');
   if(!SA.inited || !saToken() || !v || v.dataset.view !== 'sysadmin') return;
@@ -227,13 +229,14 @@ function saLiveRun(){
   if(!SA.inited || !main || !v || v.dataset.view !== 'sysadmin') return;
   var all = kinds.indexOf('*') >= 0;
   var hit = all || kinds.some(function(k){ return (SA_LIVE_TABS[k] || []).indexOf(SA.tab) >= 0; });
-  if(kinds.indexOf('reports') >= 0 || all) saApi('/overview').then(function(o){ saSetReportBadge(o.todo.reports); }).catch(function(){});   // 신고 숫자 표시는 어느 탭에서나
+  if(kinds.indexOf('reports') >= 0 || kinds.indexOf('inquiries') >= 0 || all) saApi('/overview').then(function(o){ saSetReportBadge(o.todo.reports); saSetInqBadge(o.todo.inquiries); }).catch(function(){});   // 신고 숫자 표시는 어느 탭에서나
   if(!hit) return;
   var a = document.activeElement;
   var busy = (a && main.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) || document.querySelector('.modal-backdrop.open') || document.querySelector('#saDrawer.open');
   if(busy){ kinds.forEach(function(k){ SA.liveKinds[k] = 1; }); clearTimeout(SA.liveTimer); SA.liveTimer = setTimeout(saLiveRun, 4000); return; }   // 입력·확인창을 쓰는 중엔 건드리지 않고 잠시 뒤에 다시
   var fn = SA_TAB_FN()[SA.tab]; if(fn) fn(main);
 }
+function saSetInqBadge(n){ var b = document.getElementById('saInqBadge'); if(b){ b.hidden = !n; b.textContent = n > 99 ? '99+' : n; } }
 function saSetReportBadge(n){ SA.todo = n; var b = document.getElementById('saReportBadge'); if(b){ b.hidden = !n; b.textContent = n > 99 ? '99+' : n; } }
 function saPanel(title, sub, kids, cls){
   return saH('section', { class:'sa-panel ' + (cls || '') }, [saH('div', { class:'sa-panel-h' }, [saH('h3', { text:title }), sub ? saH('span', { class:'sa-sub', text:sub }) : null])].concat(kids || []));
@@ -254,7 +257,7 @@ function saBars(series, color){
 }
 function saDash(main){
   saApi('/overview').then(function(o){
-    saSetReportBadge(o.todo.reports);
+    saSetReportBadge(o.todo.reports); saSetInqBadge(o.todo.inquiries);
     main.innerHTML = '';
     var sum = function(a){ return a.reduce(function(n, x){ return n + x.count; }, 0); };
     main.appendChild(saH('div', { class:'sa-stats' }, [
@@ -502,6 +505,49 @@ function saEventsLoad(){
   }).catch(function(e){ box.innerHTML = ''; box.appendChild(saEmpty(e.message)); });
 }
 
+/* ----- 1:1 문의 ----- */
+var SA_INQ_ST = { open:['접수', 'warn'], progress:['처리 중', ''], done:['완료', 'ok'] };
+function saInquiries(main){
+  var st = SA.state.inquiries;
+  if(st.open){ saInquiryDetail(main, st.open); return; }
+  saApi('/inquiries?status=' + st.status + '&page=' + st.page + '&size=20').then(function(r){
+    main.innerHTML = '';
+    var c = r.counts;
+    main.appendChild(saH('div', { class:'sa-tools' }, [saSeg([['active', '처리할 문의 ' + (c.open + c.progress)], ['open', '접수 ' + c.open], ['progress', '처리 중 ' + c.progress], ['done', '완료 ' + c.done]], st.status, function(v){ st.status = v; st.page = 1; saInquiries(main); })]));
+    var list = saH('ul', { class:'sa-list sa-inq-list' });
+    r.items.forEach(function(q){
+      var s = SA_INQ_ST[q.status] || [q.status, ''];
+      list.appendChild(saH('li', { class:'click', onclick:function(){ st.open = q.id; saInquiries(main); } }, [
+        saH('div', {}, [saH('b', { text:q.title }), saH('span', { text:q.user + ' · ' + q.category_label + (q.page ? ' · ' + q.page + ' 화면' : '') })]),
+        saH('div', { class:'sa-right' }, [saChip(s[0], s[1]), q.last_by === 'user' && q.status !== 'done' ? saChip('답변 필요', 'bad') : null, saH('time', { text:saWhen(q.updated_at) })])
+      ]));
+    });
+    main.appendChild(saPanel('1:1 문의', '사용자가 앱에서 남긴 문의예요. 답변하면 사용자에게 알림이 가요.', [r.items.length ? list : saEmpty('문의가 없어요.'), saPager(r.total, r.page, r.size, function(p){ st.page = p; saInquiries(main); })]));
+  }).catch(function(e){ main.innerHTML = ''; main.appendChild(saEmpty(e.message || '불러오지 못했어요.')); });
+}
+function saInquiryDetail(main, id){
+  var st = SA.state.inquiries;
+  saApi('/inquiries/' + id).then(function(q){
+    main.innerHTML = '';
+    var back = saH('button', { class:'btn', type:'button', text:'← 목록', onclick:function(){ st.open = null; saInquiries(main); } });
+    var s = SA_INQ_ST[q.status] || [q.status, ''];
+    var info = saH('dl', { class:'sa-wd-dl' }, [['사용자', q.user + ' (#' + q.user_id + ')'], ['분류', q.category_label], ['남긴 화면', q.page || '—'], ['사용 환경', q.client || '—'], ['남긴 시각', saWhen(q.created_at)]].map(function(r){ return saH('div', {}, [saH('dt', { text:r[0] }), saH('dd', { text:r[1] })]); }));
+    var thread = saH('div', { class:'sa-inq-thread' }, q.messages.map(function(m){
+      return saH('div', { class:'sa-inq-msg ' + (m.sender === 'admin' ? 'admin' : 'user') }, [saH('span', { class:'who', text:m.sender === 'admin' ? '운영자' : q.user }), saH('p', { text:m.text }), saH('time', { text:saWhen(m.created_at) })]);
+    }));
+    var ta = saH('textarea', { class:'sa-input', rows:'4', maxlength:'2000', placeholder:'사용자에게 보낼 답변 (알림으로 전달돼요)' });
+    var done = function(status){ saApi('/inquiries/' + id + '/status', { method:'POST', body:JSON.stringify({ status:status }) }).then(function(){ pushToast('✅', '상태를 바꿨어요', ''); saInquiryDetail(main, id); }).catch(saErr); };
+    var send = saH('button', { class:'btn primary', type:'button', text:'답변 보내기', onclick:function(){
+      var t = ta.value.trim(); if(!t){ pushToast('⚠️', '답변 내용을 입력해 주세요', ''); return; }
+      send.disabled = true;
+      saPost('/inquiries/' + id + '/reply', { text:t }).then(function(){ pushToast('✅', '답변을 보냈어요', '사용자에게 알림이 갔어요.'); saInquiryDetail(main, id); }).catch(function(e){ send.disabled = false; saErr(e); });
+    } });
+    var acts = saH('div', { class:'sa-inq-acts' }, [send, saH('button', { class:'btn', type:'button', text:'처리 중으로', onclick:function(){ done('progress'); } }), saH('button', { class:'btn', type:'button', text:q.status === 'done' ? '다시 열기' : '완료로 표시', onclick:function(){ done(q.status === 'done' ? 'open' : 'done'); } })]);
+    main.appendChild(saH('div', { class:'sa-tools' }, [back, saH('span', { class:'sa-sub', text:'#' + q.id }), saChip(s[0], s[1])]));
+    main.appendChild(saPanel(q.title, '', [info, thread, saH('div', { class:'sa-form' }, [ta, acts])]));
+  }).catch(function(e){ st.open = null; saErr(e); saInquiries(main); });
+}
+
 /* ----- 공지 ----- */
 function saAnnounce(main){
   main.innerHTML = '';
@@ -509,22 +555,22 @@ function saAnnounce(main){
   var msg = saH('textarea', { class:'sa-input', rows:'4', maxlength:'1000', placeholder:'내용' });
   var link = saH('input', { class:'sa-input', maxlength:'300', placeholder:'눌렀을 때 이동할 주소 (선택) 예: /app/community' });
   var prev = saH('div', { class:'sa-prev' });
-  var draw = function(){ prev.innerHTML = ''; prev.appendChild(saH('div', { class:'sa-prev-card' }, [saH('span', { class:'nic', html:ntIcon('notice', 18) }), saH('div', {}, [saH('b', { text:'📢 ' + (title.value.trim() || '제목이 여기에 보여요')}), saH('p', { text:msg.value.trim() || '내용이 여기에 보여요.' })])])); };
+  var draw = function(){ prev.innerHTML = ''; prev.appendChild(saH('div', { class:'sa-prev-card' }, [saH('span', { class:'nic', html:ntIcon('notice', 18) }), saH('div', {}, [saH('b', { text:(title.value.trim() || '제목이 여기에 보여요')}), saH('p', { text:msg.value.trim() || '내용이 여기에 보여요.' })])])); };
   [title, msg, link].forEach(function(i){ i.oninput = draw; }); draw();
-  var send = saH('button', { class:'btn primary', type:'button', text:'모든 사용자에게 보내기', onclick:function(){
+  var send = saH('button', { class:'btn primary', type:'button', text:'공지사항에 올리기', onclick:function(){
     if(!title.value.trim() || !msg.value.trim()){ pushToast('⚠️', '제목과 내용을 입력해 주세요', ''); return; }
-    saConfirm({ title:'공지를 보낼까요?', msg:'정지되지 않은 모든 사용자의 알림함으로 전달되고, 접속 중인 사람에게는 바로 알림이 떠요. 보낸 뒤에는 취소할 수 없어요.', ok:'보내기' }, function(){
-      saPost('/announcements', { title:title.value.trim(), message:msg.value.trim(), link:link.value.trim() || null }).then(function(r){ pushToast('📢', '공지를 보냈어요', saN(r.sent_count) + '명에게 전달했어요.'); saAnnounce(main); }).catch(saErr);
+    saConfirm({ title:'공지사항에 올릴까요?', msg:'모든 사용자의 공지사항(확성기 단추)에 올라가고, 접속 중인 사람에게는 \'새 공지\' 팝업이 한 번 떠요. 알림함에는 쌓이지 않아요. 올린 뒤에도 아래 목록에서 지울 수 있어요.', ok:'올리기' }, function(){
+      saPost('/announcements', { title:title.value.trim(), message:msg.value.trim(), link:link.value.trim() || null }).then(function(r){ pushToast('📢', '공지사항에 올렸어요', '접속 중인 사용자에게 바로 알려요.'); saAnnounce(main); }).catch(saErr);
     });
   } });
   main.appendChild(saH('div', { class:'sa-grid2' }, [
-    saPanel('새 공지', '알림으로 전달돼요', [saH('div', { class:'sa-form' }, [saH('label', { text:'제목' }), title, saH('label', { text:'내용' }), msg, saH('label', { text:'링크' }), link, send])]),
-    saPanel('미리보기', '받는 사람에게 이렇게 보여요', [prev])
+    saPanel('새 공지', '공지사항에 올라가요 (알림함과는 따로)', [saH('div', { class:'sa-form' }, [saH('label', { text:'제목' }), title, saH('label', { text:'내용' }), msg, saH('label', { text:'링크' }), link, send])]),
+    saPanel('미리보기', '공지사항에 이렇게 보여요', [prev])
   ]));
-  var hist = saH('div'); main.appendChild(saPanel('보낸 공지', '', [hist]));
+  var hist = saH('div'); main.appendChild(saPanel('올린 공지', '', [hist]));
   saApi('/announcements').then(function(r){
     hist.innerHTML = '';
-    hist.appendChild(r.items.length ? saH('ul', { class:'sa-list' }, r.items.map(function(a){ return saH('li', {}, [saH('div', {}, [saH('b', { text:a.title }), saH('span', { text:a.message.slice(0, 120) })]), saH('div', { class:'sa-right' }, [saH('b', { text:saN(a.sent_count) + '명' }), saH('time', { text:saWhen(a.created_at) + ' · ' + (a.by || '—') })])]); })) : saEmpty('아직 보낸 공지가 없어요.'));
+    hist.appendChild(r.items.length ? saH('ul', { class:'sa-list' }, r.items.map(function(a){ return saH('li', {}, [saH('div', {}, [saH('b', { text:a.title }), saH('span', { text:a.message.slice(0, 120) })]), saH('div', { class:'sa-right' }, [saH('time', { text:saWhen(a.created_at) + ' · ' + (a.by || '—') }), saH('button', { class:'btn sa-danger', type:'button', text:'삭제', onclick:function(){ saConfirm({ title:'공지를 지울까요?', msg:a.title + '\n공지사항 목록에서 사라져요.', ok:'삭제', danger:true }, function(){ saApi('/announcements/' + a.id, { method:'DELETE' }).then(function(){ pushToast('✅', '공지를 지웠어요', ''); saAnnounce(main); }).catch(saErr); }); } })])]); })) : saEmpty('아직 올린 공지가 없어요.'));
   }).catch(function(e){ hist.innerHTML = ''; hist.appendChild(saEmpty(e.message)); });
 }
 

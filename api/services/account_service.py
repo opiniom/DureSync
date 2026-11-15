@@ -211,8 +211,22 @@ async def purge_trashed_projects(db: AsyncSession) -> int:
     return len(ids)
 
 
+async def purge_done_inquiries(db: AsyncSession) -> int:
+    """완료된 1:1 문의를 INQUIRY_KEEP_DAYS 일이 지나면 지운다 (대화 포함). 접수·처리 중인 문의는 그대로 둔다"""
+    from config import settings
+    from models import Inquiry, InquiryMessage
+    cutoff = datetime.utcnow() - timedelta(days=max(1, int(settings.INQUIRY_KEEP_DAYS or 90)))
+    ids = (await db.execute(select(Inquiry.id).where(Inquiry.status == "done", Inquiry.updated_at < cutoff).limit(500))).scalars().all()
+    if not ids:
+        return 0
+    await db.execute(delete(InquiryMessage).where(InquiryMessage.inquiry_id.in_(ids)))
+    await db.execute(delete(Inquiry).where(Inquiry.id.in_(ids)))
+    await db.commit()
+    return len(ids)
+
+
 async def purge_loop() -> None:
-    """서버가 켜져 있는 동안 한 시간마다 만료된 탈퇴 기록과 휴지통의 프로젝트를 지운다 (관리자 페이지를 열지 않아도 기간이 지나면 사라진다)"""
+    """서버가 켜져 있는 동안 한 시간마다 만료된 탈퇴 기록·접속 기록·휴지통의 프로젝트·오래된 완료 문의를 지운다 (관리자 페이지를 열지 않아도 기간이 지나면 사라진다)"""
     from database import async_session_maker
     while True:
         try:
@@ -227,6 +241,9 @@ async def purge_loop() -> None:
                 m = await purge_trashed_projects(db)
                 if m:
                     logger.info("휴지통 보관 기간이 지난 프로젝트 %d개 영구 삭제", m)
+                q = await purge_done_inquiries(db)
+                if q:
+                    logger.info("보관 기간이 지난 완료 문의 %d건 삭제", q)
         except asyncio.CancelledError:
             raise
         except Exception:

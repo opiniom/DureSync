@@ -38,7 +38,7 @@ function liveDisconnect(){
 }
 /* 연결(또는 재연결) 직후: 그 사이 놓친 변경을 한 번 맞춰 둔다 */
 function liveResync(){
-  loadNotifications(true); pstLoadTeam();
+  loadNotifications(true); if(typeof loadAnnouncements === 'function') loadAnnouncements(false); if(typeof loadInquiries === 'function') loadInquiries(); pstLoadTeam();
   if(typeof prefsPull === 'function') prefsPull(true);            // 다른 기기에서 바꾼 내 설정
   apiFetch('/api/meetings').then(function(rows){ liveSeenDocs = {}; rows.forEach(function(r){ liveSeenDocs[r.id] = 1; }); }).catch(function(){});
   if(chatServerId()) loadChat(false);
@@ -70,7 +70,8 @@ function liveHandle(m){
       if(typeof renderWsHeader === 'function' && calApiMode) renderWsHeader();
       renderDureOrbit(); chatRenderPresence(); tmRefresh(); if(typeof wgLiveTeam === 'function') wgLiveTeam();
       break;
-    case 'notification': loadNotifications(true); break;
+    case 'notification': loadNotifications(true); if(typeof inqLive === 'function') inqLive(); break;
+    case 'announce': if(typeof loadAnnouncements === 'function') loadAnnouncements(true); break;      // 운영자가 공지사항을 올리거나 지움
     case 'prefs': if(typeof prefsPull === 'function') prefsPull(true); break;      // 다른 기기(웹/앱)에서 내 설정이 바뀜
     case 'chat':
       if(m.from) chatTypingClear(m.from);                       // 방금 메시지를 보낸 사람은 '입력 중'이 끝난 것

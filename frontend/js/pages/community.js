@@ -621,6 +621,8 @@ function openNotifLink(link){
   if(m){ wsJumpTo(parseInt(m[1], 10), m[3], parseInt(m[2], 10)); return; }
   m = /^project:(\d+)$/.exec(link);
   if(m){ openWorkspace('p' + m[1]); return; }
+  m = /^inquiry:(\d+)$/.exec(link);
+  if(m){ openInquiry(parseInt(m[1], 10)); return; }
   if(/^\/calendar/.test(link)) goView('calendar');
 }
 function cmHandleHash(){

@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     TERMINAL_MAX_SECONDS: int = 300
 
     ACCESS_LOG_DAYS: int = 90      # 사용자 접속 기록(IP) 보관 기간(일). 지나면 자동 삭제
+    INQUIRY_KEEP_DAYS: int = 90    # 완료된 1:1 문의를 보관하는 기간(일, 완료한 날부터). 지나면 자동 삭제 (접수·처리 중인 문의는 지우지 않는다)
     PROJECT_TRASH_DAYS: int = 14   # 삭제한 프로젝트를 휴지통에 보관하는 기간(일). 지나면 자동으로 영구 삭제된다
     # 팀 통화방(WebRTC) 연결 서버. 같은 네트워크 밖(다른 집·카페 등)에서 연결하려면 TURN 중계 서버가 필요하다.
     #  - STUN: 내 공인 주소를 알아내는 용도 (무료 공용 서버)

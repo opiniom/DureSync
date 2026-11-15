@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from database import engine, get_db
-from models import (AccessLog, WithdrawalLog, Announcement, AuditLog, CalendarEvent, ChatMessage, CommunityComment, CommunityPost, CommunityReport,
+from models import (Inquiry, InquiryMessage, AccessLog, WithdrawalLog, Announcement, AuditLog, CalendarEvent, ChatMessage, CommunityComment, CommunityPost, CommunityReport,
                     CrawledEvent, EventCrawlRun, MeetingDoc, Notification, Project, ProjectFile, ProjectMember, User)
 from services import event_crawler as ec
 from services import live
@@ -158,7 +158,7 @@ async def overview(admin: User = Depends(require_admin), db: AsyncSession = Depe
                     "files": await _n(db, select(func.count()).select_from(ProjectFile)),
                     "notes": await _n(db, select(func.count()).select_from(MeetingDoc)),
                     "events": await _n(db, select(func.count()).select_from(CrawledEvent))},
-        "todo": {"reports": len(open_reports),
+        "todo": {"reports": len(open_reports), "inquiries": await _n(db, select(func.count()).select_from(Inquiry).where(Inquiry.status == "open")),
                  "crawl_failed": await _n(db, select(func.count()).select_from(EventCrawlRun).where(EventCrawlRun.ok == False, EventCrawlRun.started_at >= now - timedelta(days=1)))},  # noqa: E712
         "series": {"users": await _series(db, User.created_at, 14), "posts": await _series(db, CommunityPost.created_at, 14),
                    "chat": await _series(db, ChatMessage.created_at, 14)},
@@ -604,21 +604,102 @@ async def list_announcements(admin: User = Depends(require_admin), db: AsyncSess
 
 @router.post("/announcements")
 async def send_announcement(data: AnnounceIn, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
-    """모든(정지되지 않은) 사용자에게 알림으로 공지를 보낸다. 접속 중인 사람에게는 바로 팝업으로 뜬다."""
+    """공지사항에 올린다. 알림함에는 쌓지 않고, 접속 중인 사람에게는 '새 공지' 신호만 바로 간다."""
     title = data.title.strip(); message = data.message.strip()
     if not title or not message:
         raise HTTPException(400, "제목과 내용을 입력해 주세요.")
     link = (data.link or "").strip() or None
     if link and not (link.startswith("/app") or link.startswith("https://")):
         raise HTTPException(400, "링크는 /app/… 또는 https:// 주소만 쓸 수 있어요.")
-    ids = (await db.execute(select(User.id).where(User.is_active == True))).scalars().all()  # noqa: E712
-    for uid in ids:
-        db.add(Notification(user_id=uid, title="📢 " + title, message=message, category="notice", link=link))
-    ann = Announcement(title=title, message=message, link=link, sent_count=len(ids), created_by=admin.id)
+    n = await _n(db, select(func.count()).select_from(User).where(User.is_active == True))  # noqa: E712
+    ann = Announcement(title=title, message=message, link=link, sent_count=n, created_by=admin.id)
     db.add(ann)
-    _audit(db, admin, "announce.send", "announcement", None, f"{title} → {len(ids)}명")
+    _audit(db, admin, "announce.send", "announcement", None, f"{title} → 공지사항 게시")
     await db.commit()
-    return {"ok": True, "sent_count": len(ids)}
+    return {"ok": True, "sent_count": n, "id": ann.id}
+
+
+@router.delete("/announcements/{ann_id}")
+async def delete_announcement(ann_id: int, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    ann = (await db.execute(select(Announcement).where(Announcement.id == ann_id))).scalar_one_or_none()
+    if not ann:
+        raise HTTPException(404, "공지를 찾을 수 없어요.")
+    _audit(db, admin, "announce.delete", "announcement", ann.id, ann.title)
+    await db.execute(delete(Announcement).where(Announcement.id == ann_id))
+    await db.commit()
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------- 1:1 문의
+INQ_STATUS = ("open", "progress", "done")
+
+
+class InqReplyIn(BaseModel):
+    text: str = Field(..., min_length=1, max_length=2000)
+    status: Optional[str] = None
+
+
+class InqStatusIn(BaseModel):
+    status: str
+
+
+def _inq_row(q: Inquiry, name: Optional[str]) -> Dict[str, Any]:
+    from routers.inquiries import CATEGORIES, STATUS_LABEL, iso
+    return {"id": q.id, "user_id": q.user_id, "user": name or "(탈퇴한 사용자)", "category": q.category, "category_label": CATEGORIES.get(q.category, "기타"), "title": q.title, "status": q.status,
+            "status_label": STATUS_LABEL.get(q.status, q.status), "last_by": q.last_by, "page": q.page, "client": q.client, "created_at": iso(q.created_at), "updated_at": iso(q.updated_at)}
+
+
+@router.get("/inquiries")
+async def inq_list(status: str = "active", page: int = 1, size: int = 30, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    page, size, off = _page(page, size)
+    conds = []
+    if status in INQ_STATUS:
+        conds.append(Inquiry.status == status)
+    elif status == "active":
+        conds.append(Inquiry.status != "done")
+    total = await _n(db, select(func.count()).select_from(Inquiry).where(*conds))
+    rows = (await db.execute(select(Inquiry, User.username).outerjoin(User, User.id == Inquiry.user_id).where(*conds).order_by(Inquiry.updated_at.desc()).limit(size).offset(off))).all()
+    counts = {k: await _n(db, select(func.count()).select_from(Inquiry).where(Inquiry.status == k)) for k in INQ_STATUS}
+    return {"total": total, "page": page, "size": size, "counts": counts, "items": [_inq_row(q, name) for q, name in rows]}
+
+
+@router.get("/inquiries/{qid}")
+async def inq_detail(qid: int, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    from routers.inquiries import _thread
+    row = (await db.execute(select(Inquiry, User.username).outerjoin(User, User.id == Inquiry.user_id).where(Inquiry.id == qid))).first()
+    if not row:
+        raise HTTPException(404, "문의를 찾을 수 없어요.")
+    return {**_inq_row(*row), "messages": await _thread(db, qid)}
+
+
+@router.post("/inquiries/{qid}/reply")
+async def inq_reply(qid: int, data: InqReplyIn, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    q = (await db.execute(select(Inquiry).where(Inquiry.id == qid))).scalar_one_or_none()
+    if not q:
+        raise HTTPException(404, "문의를 찾을 수 없어요.")
+    text = data.text.strip()
+    if not text:
+        raise HTTPException(400, "내용을 입력해 주세요.")
+    new_status = data.status if data.status in INQ_STATUS else ("progress" if q.status == "open" else q.status)
+    db.add(InquiryMessage(inquiry_id=qid, sender="admin", sender_id=admin.id, text=text))
+    q.status = new_status; q.last_by = "admin"; q.updated_at = datetime.utcnow()
+    db.add(Notification(user_id=q.user_id, title="문의에 답변이 왔어요", message=f"{q.title}\n{text[:100]}", category="inquiry", link=f"inquiry:{q.id}"))
+    _audit(db, admin, "inquiry.reply", "inquiry", q.id, q.title)
+    await db.commit()
+    return {"ok": True, "status": new_status}
+
+
+@router.post("/inquiries/{qid}/status")
+async def inq_status(qid: int, data: InqStatusIn, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    if data.status not in INQ_STATUS:
+        raise HTTPException(400, "상태는 접수·처리 중·완료 중 하나예요.")
+    q = (await db.execute(select(Inquiry).where(Inquiry.id == qid))).scalar_one_or_none()
+    if not q:
+        raise HTTPException(404, "문의를 찾을 수 없어요.")
+    q.status = data.status; q.updated_at = datetime.utcnow()
+    _audit(db, admin, "inquiry.status", "inquiry", q.id, f"{q.title} → {data.status}")
+    await db.commit()
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------- 감사 로그 · 시스템

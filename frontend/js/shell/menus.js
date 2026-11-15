@@ -2,6 +2,7 @@
 var unreadCount = 0;
 function closeMenus(){
   document.getElementById('notifPanel').classList.remove('open');
+  var ap = document.getElementById('annPanel'); if(ap) ap.classList.remove('open');
   document.getElementById('avatarMenu').classList.remove('open');
   var wp = document.getElementById('widgetPicker');
   if(wp) wp.classList.remove('open');
