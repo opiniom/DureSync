@@ -21,6 +21,8 @@ class User(Base):
     banned_at = Column(DateTime, nullable=True)
     withdrawn_at = Column(DateTime, nullable=True)    # 탈퇴한 시각. 값이 있으면 개인정보를 모두 지운 '번호 보존용' 빈 계정이다 (번호가 다시 쓰이면 옛 로그인 토큰이 남의 계정으로 통할 수 있어서 행 자체는 남긴다)
     announce_seen = Column(Integer, default=0, nullable=False, server_default="0")   # 공지사항: 여기까지(공지 번호) 확인했어요
+    tour_seen = Column(Integer, default=0, nullable=False, server_default="0")       # 사용 안내(말풍선 투어): 본 버전. 내용이 크게 바뀌면 버전을 올려 한 번 더 보여준다
+    hints_seen = Column(Integer, default=0, nullable=False, server_default="0")      # 화면별 첫 방문 힌트: 본 화면 비트(워크스페이스 1 · 회의록 2 · 캘린더 4)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # 1:N 관계 (사용자의 코드 실행 히스토리)

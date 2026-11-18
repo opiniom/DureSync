@@ -38,7 +38,7 @@ function liveDisconnect(){
 }
 /* 연결(또는 재연결) 직후: 그 사이 놓친 변경을 한 번 맞춰 둔다 */
 function liveResync(){
-  loadNotifications(true); if(typeof loadAnnouncements === 'function') loadAnnouncements(false); if(typeof loadInquiries === 'function') loadInquiries(); pstLoadTeam();
+  loadNotifications(true); if(typeof loadAnnouncements === 'function') loadAnnouncements(false); if(typeof loadInquiries === 'function') loadInquiries(); if(typeof tourAuto === 'function') tourAuto(); pstLoadTeam();
   if(typeof prefsPull === 'function') prefsPull(true);            // 다른 기기에서 바꾼 내 설정
   apiFetch('/api/meetings').then(function(rows){ liveSeenDocs = {}; rows.forEach(function(r){ liveSeenDocs[r.id] = 1; }); }).catch(function(){});
   if(chatServerId()) loadChat(false);

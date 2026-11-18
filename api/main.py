@@ -29,6 +29,7 @@ from routers.events import router as events_router
 from routers.notifications import router as notifications_router
 from routers.announcements import router as announcements_router
 from routers.inquiries import router as inquiries_router
+from routers.onboarding import router as onboarding_router
 from routers.call import router as call_router
 from routers.gui import router as gui_router
 from routers.community import router as community_router, seed_community
@@ -129,6 +130,7 @@ app.include_router(events_router)
 app.include_router(notifications_router)
 app.include_router(announcements_router)
 app.include_router(inquiries_router)
+app.include_router(onboarding_router)
 app.include_router(call_router)
 app.include_router(gui_router)
 app.include_router(community_router)

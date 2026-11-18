@@ -22,7 +22,7 @@ function toggleAvatarMenu(e){
   e.stopPropagation();
   var wasOpen = document.getElementById('avatarMenu').classList.contains('open');
   closeMenus();
-  if(!wasOpen) document.getElementById('avatarMenu').classList.add('open');
+  if(!wasOpen){ if(typeof tourMenuSync === 'function') tourMenuSync(); document.getElementById('avatarMenu').classList.add('open'); }
 }
 document.addEventListener('click', function(e){
   if(!e.target.closest('.notif-wrap') && !e.target.closest('.avatar-wrap') && !e.target.closest('.widget-picker-wrap') && !e.target.closest('.pst-wrap')) closeMenus();

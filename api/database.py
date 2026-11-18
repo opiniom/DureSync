@@ -80,6 +80,12 @@ def _add_missing_columns(sync_conn):
             sync_conn.execute(text("UPDATE users SET announce_seen = (SELECT COALESCE(MAX(id), 0) FROM announcements)"))
         except Exception:
             pass
+    if user_cols and "hints_seen" not in user_cols:                     # 화면별 첫 방문 힌트(비트) — 이미 있는 사용자는 모두 본 것으로 시작 (안내는 새로 가입한 사람에게만)
+        sync_conn.execute(text("ALTER TABLE users ADD COLUMN hints_seen INTEGER NOT NULL DEFAULT 0"))
+        sync_conn.execute(text("UPDATE users SET hints_seen = 7"))
+    if user_cols and "tour_seen" not in user_cols:                      # 사용 안내(말풍선 투어) 본 버전 — 이미 있는 사용자는 본 것으로 시작 (안내는 새로 가입한 사람에게만)
+        sync_conn.execute(text("ALTER TABLE users ADD COLUMN tour_seen INTEGER NOT NULL DEFAULT 0"))
+        sync_conn.execute(text("UPDATE users SET tour_seen = 1"))
     pj_cols = {row[1] for row in sync_conn.execute(text("PRAGMA table_info(projects)"))}
     for name, ddl in (("deleted_at", "DATETIME"), ("deleted_by", "INTEGER"), ("delete_reason", "VARCHAR(200)")):      # 관리자 휴지통
         if pj_cols and name not in pj_cols:

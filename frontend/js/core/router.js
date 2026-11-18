@@ -82,6 +82,7 @@ function goView(name){
   routerSync(name);
   if(name==='landing' && typeof ldEnter === 'function') ldEnter();
   if((name==='hub' || name==='institution') && typeof hbEnter === 'function') hbEnter(name);
+  if(typeof tourViewHint === 'function') tourViewHint(name);          // 워크스페이스·회의록·캘린더에 처음 들어가면 두레가 한 번만 힌트를 보여준다
   if(typeof greetRefresh === 'function') greetRefresh();
   if(name==='calendar') refreshDetections(false);
   if(name==='events') loadEvents();
