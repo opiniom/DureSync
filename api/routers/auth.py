@@ -13,6 +13,8 @@ from sqlalchemy import select
 from database import get_db
 from models import User
 from schemas import AiNameUpdate, UserLogin, UserResponse, TokenResponse, SocialLoginRequest
+from services.rate_limit import limiter
+from services.starter import create_starter_project
 from services.auth_service import hash_password, verify_password, create_access_token, get_current_user
 from config import settings
 from services.access_log import log_access
@@ -72,7 +74,7 @@ async def _once(provider: str, code: Optional[str], work):
         return resp
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login", response_model=TokenResponse, dependencies=[Depends(limiter("login", 30, 600, "로그인 시도"))])
 async def login(credentials: UserLogin, request: Request, db: AsyncSession = Depends(get_db)):
     """이메일과 비밀번호로 로그인 및 JWT 토큰 발급"""
     result = await db.execute(select(User).where(User.email == credentials.email))
@@ -166,7 +168,7 @@ async def get_auth_config(request: Request):
         "frontend_url": settings.FRONTEND_URL
     }
 
-@router.get("/google/login", tags=["OAuth"])
+@router.get("/google/login", tags=["OAuth"], dependencies=[Depends(limiter("oauth", 60, 600, "로그인"))])
 async def google_login():
     """Google OAuth 2.0 인가 화면으로 리디렉션"""
     if not settings.GOOGLE_CLIENT_ID:
@@ -184,7 +186,7 @@ async def google_login():
     auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
     return RedirectResponse(auth_url)
 
-@router.get("/google/callback", tags=["OAuth"])
+@router.get("/google/callback", tags=["OAuth"], dependencies=[Depends(limiter("oauth_cb", 60, 600, "로그인"))])
 async def google_callback(
     code: Optional[str] = None, 
     error: Optional[str] = None, 
@@ -248,6 +250,7 @@ async def _google_callback(code: Optional[str], error: Optional[str], db: AsyncS
             db.add(user)
             await db.commit()
             await db.refresh(user)
+            await create_starter_project(db, user)               # 가입한 사람에게 바로 실행해 볼 수 있는 예제 프로젝트 하나
         else:
             if not user.is_active:
                 raise Exception("정지되었거나 비활성화된 계정이에요." + (f" ({user.ban_reason})" if user.ban_reason else ""))
@@ -262,7 +265,7 @@ async def _google_callback(code: Optional[str], error: Optional[str], db: AsyncS
     except Exception as e:
         return RedirectResponse(f"{settings.FRONTEND_URL}?social_error={urllib.parse.quote(str(e))}")
 
-@router.get("/naver/login", tags=["OAuth"])
+@router.get("/naver/login", tags=["OAuth"], dependencies=[Depends(limiter("oauth", 60, 600, "로그인"))])
 async def naver_login():
     """Naver 로그인 인가 화면으로 리디렉션"""
     if not settings.NAVER_CLIENT_ID:
@@ -279,7 +282,7 @@ async def naver_login():
     auth_url = f"https://nid.naver.com/oauth2.0/authorize?{urllib.parse.urlencode(params)}"
     return RedirectResponse(auth_url)
 
-@router.get("/naver/callback", tags=["OAuth"])
+@router.get("/naver/callback", tags=["OAuth"], dependencies=[Depends(limiter("oauth_cb", 60, 600, "로그인"))])
 async def naver_callback(
     code: Optional[str] = None, 
     state: Optional[str] = None, 
@@ -342,6 +345,7 @@ async def _naver_callback(code: Optional[str], state: Optional[str], error: Opti
             db.add(user)
             await db.commit()
             await db.refresh(user)
+            await create_starter_project(db, user)               # 가입한 사람에게 바로 실행해 볼 수 있는 예제 프로젝트 하나
         else:
             if not user.is_active:
                 raise Exception("정지되었거나 비활성화된 계정이에요." + (f" ({user.ban_reason})" if user.ban_reason else ""))

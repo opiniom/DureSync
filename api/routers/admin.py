@@ -702,6 +702,41 @@ async def inq_status(qid: int, data: InqStatusIn, admin: User = Depends(require_
     return {"ok": True}
 
 
+# ---------------------------------------------------------------- DB 백업 (최고관리자만)
+@router.get("/backups")
+async def backups_list(admin: User = Depends(require_super)):
+    """서버에 보관 중인 DB 자동 백업 목록. 내려받아서 서버 밖(내 컴퓨터)에 따로 보관해 둘 수 있다."""
+    from services import backup as bk
+    age = bk.latest_age_seconds()
+    return {"enabled": bk.backup_dir() is not None, "keep": settings.BACKUP_KEEP, "items": bk.list_info(), "latest_age_hours": round(age / 3600, 1) if age is not None else None}
+
+
+@router.post("/backups/run")
+async def backups_run(admin: User = Depends(require_super), db: AsyncSession = Depends(get_db)):
+    """지금 바로 백업을 하나 만든다 (평소에는 하루 한 번 자동)"""
+    import asyncio as _aio
+    from services import backup as bk
+    path = await _aio.to_thread(bk.backup_once)
+    if not path:
+        raise HTTPException(400, "백업을 만들지 못했어요. (SQLite 데이터베이스가 아니거나 저장 공간이 부족할 수 있어요)")
+    _audit(db, admin, "backup.run", "backup", None, os.path.basename(path))
+    await db.commit()
+    return {"ok": True, "name": os.path.basename(path)}
+
+
+@router.get("/backups/{name}")
+async def backups_download(name: str, admin: User = Depends(require_super), db: AsyncSession = Depends(get_db)):
+    """백업 파일 내려받기. 가입자 정보가 모두 들어 있어서 최고관리자만, 받을 때마다 감사 기록을 남긴다."""
+    from fastapi.responses import FileResponse
+    from services import backup as bk
+    path = bk.safe_path(name)
+    if not path:
+        raise HTTPException(404, "백업 파일을 찾을 수 없어요.")
+    _audit(db, admin, "backup.download", "backup", None, name)
+    await db.commit()
+    return FileResponse(path, media_type="application/gzip", filename=name, headers={"Cache-Control": "no-store"})
+
+
 # ---------------------------------------------------------------- 감사 로그 · 시스템
 def _audit_row(a: AuditLog) -> Dict[str, Any]:
     return {"id": a.id, "admin": a.admin_name, "admin_id": a.admin_id, "action": a.action, "target_type": a.target_type, "target_id": a.target_id, "detail": a.detail, "ip": a.ip, "created_at": _iso(a.created_at)}

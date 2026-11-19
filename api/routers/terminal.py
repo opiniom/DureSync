@@ -109,6 +109,33 @@ def _prepare(lang: str, code: str, tmp: str, fname: Optional[str] = None) -> Tup
     return None, []
 
 
+# ---- 동시 실행 한도 (서버 전체 · 사용자별): 작은 서버에서 실행이 한꺼번에 몰려 메모리가 바닥나는 것을 막는다
+_SLOTS: Dict[str, object] = {"total": 0, "users": {}}
+
+
+def _slot_take(uid: int) -> Optional[str]:
+    """자리가 있으면 하나 잡고 None, 없으면 사용자에게 보여 줄 안내 글을 돌려준다"""
+    per = max(1, int(settings.TERMINAL_MAX_PER_USER)); cap = max(1, int(settings.TERMINAL_MAX_CONCURRENT))
+    users: Dict[int, int] = _SLOTS["users"]  # type: ignore[assignment]
+    if users.get(uid, 0) >= per:
+        return "이미 실행 중인 프로그램이 있어요. 끝나길 기다리거나 ■ 중지를 누른 뒤 다시 눌러 주세요."
+    if int(_SLOTS["total"]) >= cap:
+        return f"지금 코드를 실행하는 사람이 많아요(동시에 {cap}개까지). 잠시 뒤에 다시 눌러 주세요."
+    _SLOTS["total"] = int(_SLOTS["total"]) + 1
+    users[uid] = users.get(uid, 0) + 1
+    return None
+
+
+def _slot_give(uid: int) -> None:
+    users: Dict[int, int] = _SLOTS["users"]  # type: ignore[assignment]
+    _SLOTS["total"] = max(0, int(_SLOTS["total"]) - 1)
+    n = users.get(uid, 0) - 1
+    if n > 0:
+        users[uid] = n
+    else:
+        users.pop(uid, None)
+
+
 @router.websocket("/ws/terminal")
 async def websocket_terminal(websocket: WebSocket):
     await websocket.accept()
@@ -129,7 +156,7 @@ async def websocket_terminal(websocket: WebSocket):
         await websocket.close(code=4401); return
 
     state: Dict[str, object] = {"proc": None, "tmp": None, "tasks": [], "sent": 0, "stopped": False,
-                                "lang": "", "code": "", "t0": 0.0, "out": "", "err": "", "dbg": None, "dbg_held": False}
+                                "lang": "", "code": "", "t0": 0.0, "out": "", "err": "", "dbg": None, "dbg_held": False, "slot": False}
 
     async def record(status: str, exit_code, compile_output: Optional[str] = None) -> None:
         """실행 한 번을 '실행 이력'(submissions)에 남긴다. 실패해도 실행 자체에는 영향이 없다."""
@@ -154,9 +181,15 @@ async def websocket_terminal(websocket: WebSocket):
         if state["dbg_held"]:
             dbg.release(); state["dbg_held"] = False
 
+    def release_slot() -> None:
+        if state["slot"]:
+            state["slot"] = False
+            _slot_give(user.id)
+
     def cleanup() -> None:
         kill_now()
         drop_dbg()
+        release_slot()
         tmp = state["tmp"]
         if tmp and os.path.exists(tmp):
             shutil.rmtree(tmp, ignore_errors=True)
@@ -218,7 +251,7 @@ async def websocket_terminal(websocket: WebSocket):
             except Exception:
                 pass
         await asyncio.gather(out_t, err_t, return_exceptions=True)
-        drop_dbg()
+        drop_dbg(); release_slot()
         if idle_out:
             await say("exit", f"\n\x1b[33m[멈춰 있는 시간이 {dbg.IDLE_SECONDS // 60}분을 넘어서 디버그를 끝냈어요]\x1b[0m\n", code=-1)
             await record("Stopped", -1)
@@ -280,6 +313,12 @@ async def websocket_terminal(websocket: WebSocket):
                         continue
                     state["dbg_held"] = True
                 tmp = tempfile.mkdtemp(prefix="cl_term_"); state["tmp"] = tmp
+                busy = _slot_take(user.id)
+                if busy:                                           # 동시 실행 한도: 자리가 날 때까지 기다리라고 안내 (서버가 몰리지 않게)
+                    cleanup()
+                    await say("stderr", busy + "\n"); await say("exit", "", code=1)
+                    continue
+                state["slot"] = True
                 spawn_extra: Dict[str, object] = {}
                 with sb.runtime_override({rt: rv} if (rt and rv) else None):
                     env = sb._clean_env(tmp); env["PYTHONUNBUFFERED"] = "1"
@@ -301,12 +340,12 @@ async def websocket_terminal(websocket: WebSocket):
                         c_out, c_err = await asyncio.wait_for(cp.communicate(), timeout=COMPILE_SECONDS)
                     except asyncio.TimeoutError:
                         sb._kill(cp)
-                        drop_dbg()
+                        drop_dbg(); release_slot()
                         await say("stderr", "\x1b[31m[컴파일 시간이 너무 오래 걸려서 중단했어요]\x1b[0m\n"); await say("exit", "", code=1)
                         continue
                     if cp.returncode != 0:
                         err = sb.decode_bytes(c_err) or sb.decode_bytes(c_out)
-                        drop_dbg()
+                        drop_dbg(); release_slot()
                         await record("Compilation Error", cp.returncode, err[:20_000])
                         await say("stderr", f"\x1b[31m[컴파일 에러]\n{err}\x1b[0m\n"); await say("exit", "", code=cp.returncode)
                         continue

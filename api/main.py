@@ -77,6 +77,8 @@ async def lifespan(app: FastAPI):
     # 공모전·해커톤 정보를 서버가 켜져 있는 동안 주기적으로 자동 수집 (EVENT_CRAWL_ENABLED=false 로 끌 수 있음)
     from services.account_service import purge_loop
     purger = asyncio.create_task(purge_loop())          # 탈퇴 기록은 7일 뒤 자동 삭제
+    from services.backup import backup_loop
+    backer = asyncio.create_task(backup_loop())         # DB 를 하루에 한 번 압축해서 backups/ 에 보관 (최근 7개)
     scheduler = None
     if settings.EVENT_CRAWL_ENABLED:
         from services.event_crawler import scheduler_loop
@@ -85,6 +87,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         purger.cancel()
+        backer.cancel()
         if scheduler:
             scheduler.cancel()
 
@@ -101,6 +104,7 @@ app = FastAPI(
 
 import os
 import re
+import hashlib
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -371,11 +375,42 @@ async def serve_ui(request: Request, page: str = ""):
         raise HTTPException(status_code=404, detail="Not found")
     snap = _ui_snapshot()
     if snap["html"]:
-        etag = '"%s"' % snap.get("build", "")
+        from services import seo
+        path = seo.norm(request.url.path)
+        key = "%s|%s|%s" % (snap.get("build", ""), path if path in seo.PAGES else "/app", settings.PUBLIC_BASE_URL)
+        etag = '"%s"' % hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
         if snap.get("build") and request.headers.get("if-none-match") == etag:      # 화면이 안 바뀌었으면 92KB 를 다시 보내지 않는다
             return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "no-cache"})
-        return HTMLResponse(snap["html"], headers={"Cache-Control": "no-cache", "ETag": etag})
+        cached = _SEO_HTML.get(key)
+        if cached is None:                                                           # 소개 화면은 검색·공유용 정보를 넣고, 로그인 화면(/app …)은 noindex
+            if len(_SEO_HTML) > 40: _SEO_HTML.clear()
+            cached = _SEO_HTML[key] = seo.decorate(snap["html"], path)
+        return HTMLResponse(cached, headers={"Cache-Control": "no-cache", "ETag": etag})
     return {"error": "UI index.html 파일을 찾을 수 없습니다."}
+
+
+_SEO_HTML: dict = {}
+
+
+@app.get("/terms", tags=["UI"], include_in_schema=False)
+@app.get("/privacy", tags=["UI"], include_in_schema=False)
+async def legal_page(request: Request):
+    """이용약관 · 개인정보 처리방침 (로그인 없이 볼 수 있는 독립 페이지)"""
+    from services import legal
+    kind = "terms" if request.url.path.rstrip("/").endswith("terms") else "privacy"
+    return HTMLResponse(legal.render_page(kind), headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.get("/robots.txt", include_in_schema=False)
+async def robots_txt():
+    from services import seo
+    return Response(seo.robots_txt(), media_type="text/plain; charset=utf-8", headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.get("/sitemap.xml", include_in_schema=False)
+async def sitemap_xml():
+    from services import seo
+    return Response(seo.sitemap_xml(), media_type="application/xml; charset=utf-8", headers={"Cache-Control": "public, max-age=3600"})
 
 
 @app.get("/api", tags=["General"])

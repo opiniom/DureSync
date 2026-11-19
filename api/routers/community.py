@@ -23,6 +23,7 @@ from models import (
     CommunityApplication, CommunityBookmark, CommunityComment, CommunityLike, CommunityPost, CommunityReport,
     CrawledEvent, Notification, Project, ProjectMember, User,
 )
+from services.team_limit import room_left, ensure_room, full_message, max_members
 from services.access import project_users
 from services.auth_service import get_current_user, get_current_user_optional
 
@@ -341,6 +342,11 @@ async def create_post(data: PostIn, user: User = Depends(get_current_user), db: 
             raise HTTPException(status_code=400, detail="찾는 역할을 하나 이상 적어 주세요. (예: 프론트엔드)")
         if data.recruit_deadline and data.recruit_deadline < date.today():
             raise HTTPException(status_code=400, detail="모집 마감일은 오늘 이후여야 해요.")
+        room = await room_left(db, project)                 # 팀장 포함 최대 인원 안에서만 모집할 수 있다
+        if room <= 0:
+            raise HTTPException(status_code=400, detail=full_message())
+        if (data.recruit_slots or 1) > room:
+            raise HTTPException(status_code=400, detail=f"이 프로젝트는 팀장 포함 최대 {max_members()}명이라 지금은 {room}명까지만 모집할 수 있어요.")
     event_id = None
     if data.event_id:
         if (await db.execute(select(CrawledEvent.id).where(CrawledEvent.id == data.event_id))).first():
@@ -403,6 +409,12 @@ async def edit_post(post_id: int, data: PostEdit, user: User = Depends(get_curre
                 raise HTTPException(status_code=400, detail="찾는 역할을 하나 이상 적어 주세요.")
             p.recruit_roles = json.dumps(roles, ensure_ascii=False)
         if data.recruit_slots is not None:
+            proj = (await db.execute(select(Project).where(Project.id == p.project_id, Project.deleted_at.is_(None)))).scalar_one_or_none() if p.project_id else None
+            if proj is not None:                            # 이미 수락한 인원 + 남은 자리 안에서만
+                done = (await db.execute(select(func.count()).select_from(CommunityApplication).where(CommunityApplication.post_id == p.id, CommunityApplication.status == "accepted"))).scalar_one()
+                allowed = done + await room_left(db, proj)
+                if data.recruit_slots > max(allowed, 1):
+                    raise HTTPException(status_code=400, detail=f"이 프로젝트는 팀장 포함 최대 {max_members()}명이라 모집 인원은 {max(allowed, 1)}명까지예요.")
             p.recruit_slots = data.recruit_slots
         if data.recruit_deadline is not None:
             p.recruit_deadline = data.recruit_deadline
@@ -563,6 +575,10 @@ async def apply_to_post(post_id: int, data: ApplyIn, user: User = Depends(get_cu
         raise HTTPException(status_code=400, detail="이미 마감된 모집이에요.")
     if p.project_id and (await db.execute(select(ProjectMember.id).where(ProjectMember.project_id == p.project_id, ProjectMember.user_id == user.id))).first():
         raise HTTPException(status_code=400, detail="이미 이 프로젝트의 팀원이에요.")
+    if p.project_id:
+        proj = (await db.execute(select(Project).where(Project.id == p.project_id, Project.deleted_at.is_(None)))).scalar_one_or_none()
+        if proj is not None and await room_left(db, proj) <= 0:
+            raise HTTPException(status_code=400, detail="이 프로젝트는 팀 인원이 가득 차서 더 지원받지 않아요.")
     if await _count_since(db, CommunityApplication, CommunityApplication.created_at, user.id, datetime.utcnow() - timedelta(days=1)) >= LIMITS["apply_per_day"]:
         raise HTTPException(status_code=429, detail="오늘은 더 지원할 수 없어요.")
     msg = _clean_text(data.message)
@@ -611,9 +627,11 @@ async def decide_application(app_id: int, decision: str, user: User = Depends(ge
         raise HTTPException(status_code=400, detail="모집 인원이 이미 찼어요.")
     exists = (await db.execute(select(ProjectMember.id).where(ProjectMember.project_id == project.id, ProjectMember.user_id == a.user_id))).first()
     if not exists and a.user_id != project.owner_id:
+        await ensure_room(db, project)                      # 팀장 포함 최대 인원
         db.add(ProjectMember(project_id=project.id, user_id=a.user_id, role="member"))
     a.status = "accepted"
-    if accepted + 1 >= (p.recruit_slots or 1):
+    left_after = await room_left(db, project) - (0 if exists or a.user_id == project.owner_id else 1)
+    if accepted + 1 >= (p.recruit_slots or 1) or left_after <= 0:     # 정원이 차거나 프로젝트 인원이 가득 차면 모집 마감
         p.status = "closed"
     await _notify(db, a.user_id, "팀에 합류했어요 🎉", f"'{project.title}' 프로젝트의 팀원이 됐어요. 워크스페이스에서 확인해 보세요", f"project:{project.id}", project.id)
     await db.commit()

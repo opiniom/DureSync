@@ -1311,14 +1311,62 @@ function ansiToHtml(text) {
     .replace(/\x1b\[0m/g, '</span>');
 }
 
-function appendLiveOutput(text, isErr) {
-  var log = document.getElementById('termLiveLog');
-  if (!log) return;
+/* 실행 출력 그리기
+   예전에는 서버가 보낸 조각(1KB)마다 줄을 하나씩 붙이고 매번 맨 아래로 스크롤했다. 무한 반복으로 출력이 쏟아지면 조각이 수천 개 쌓여서
+   화면이 수십 초 멈췄고, 그동안 ■ 중지를 눌러도 반응하지 못했다(그리는 일이 클릭보다 먼저 줄을 서 있어서).
+   · 들어온 출력은 모아 두었다가 0.05초에 한 번만 그린다 (스크롤도 그때 한 번)
+   · 화면에는 최근 출력 일부만 남긴다 (앞부분은 지우고 안내 한 줄)
+   · 한 번 실행의 출력이 너무 많으면 스스로 멈춘다 (서버·내 PC 러너의 제한보다 먼저) */
+var LIVE_OUT = { buf: [], timer: 0, spans: [], keep: 0, total: 0, mute: false, trimmed: false, KEEP_MAX: 120000, FLUSH_MAX: 40000, TOTAL_MAX: 500000 };
+function liveOutReset() {
+  clearTimeout(LIVE_OUT.timer); LIVE_OUT.timer = 0; LIVE_OUT.buf = []; LIVE_OUT.spans = []; LIVE_OUT.keep = 0; LIVE_OUT.total = 0; LIVE_OUT.mute = false; LIVE_OUT.trimmed = false;
+}
+function liveOutMute() { LIVE_OUT.mute = true; LIVE_OUT.buf = []; clearTimeout(LIVE_OUT.timer); LIVE_OUT.timer = 0; }
+/* 이번 실행의 출력 총량 확인. 넘으면 false (호출한 쪽이 실행을 멈춘다) */
+function liveOutBudget(text) {
+  LIVE_OUT.total += String(text || '').length;
+  return LIVE_OUT.total <= LIVE_OUT.TOTAL_MAX;
+}
+function liveOutAdd(text, isErr) {
+  var log = document.getElementById('termLiveLog'); if (!log || !text) return;
   var span = document.createElement('span');
   if (isErr) span.style.color = '#ff7b72';
   span.innerHTML = ansiToHtml(text);
   log.appendChild(span);
+  LIVE_OUT.spans.push({ el: span, len: text.length }); LIVE_OUT.keep += text.length;
+  while (LIVE_OUT.keep > LIVE_OUT.KEEP_MAX && LIVE_OUT.spans.length > 1) {          // 화면에는 최근 출력만 남긴다
+    var old = LIVE_OUT.spans.shift(); LIVE_OUT.keep -= old.len; if (old.el.parentNode) old.el.parentNode.removeChild(old.el);
+    LIVE_OUT.trimmed = true;
+  }
+  if (LIVE_OUT.trimmed && !log.querySelector('.term-trim')) {
+    var note = document.createElement('div'); note.className = 'term-trim'; note.style.cssText = 'color:#8b949e; margin:4px 0;'; note.textContent = '… 출력이 길어서 앞부분은 화면에서 지웠어요 (최근 출력만 보여요)';
+    log.insertBefore(note, log.firstChild);
+  }
+}
+function liveOutFlush() {
+  LIVE_OUT.timer = 0;
+  var log = document.getElementById('termLiveLog'); if (!log || !LIVE_OUT.buf.length) { LIVE_OUT.buf = []; return; }
+  var items = LIVE_OUT.buf; LIVE_OUT.buf = [];
+  // 같은 종류(일반/오류)가 이어지는 조각은 하나로 합친다. 한 번에 너무 많으면 뒤쪽 일부만 그린다
+  var groups = [], i, g;
+  for (i = 0; i < items.length; i++) {
+    g = groups[groups.length - 1];
+    if (g && g.err === items[i][1]) g.text += items[i][0]; else groups.push({ text: items[i][0], err: items[i][1] });
+  }
+  var budget = LIVE_OUT.FLUSH_MAX;
+  for (i = groups.length - 1; i >= 0 && budget > 0; i--) { if (groups[i].text.length > budget) groups[i].text = groups[i].text.slice(-budget); budget -= groups[i].text.length; if (budget <= 0) { groups = groups.slice(i); break; } }
+  groups.forEach(function(x) { liveOutAdd(x.text, x.err); });
   log.scrollTop = log.scrollHeight;
+}
+function appendLiveOutput(text, isErr) {
+  if (!text || LIVE_OUT.mute) return;
+  LIVE_OUT.buf.push([text, !!isErr]);
+  if (!LIVE_OUT.timer) LIVE_OUT.timer = setTimeout(liveOutFlush, 50);
+}
+/* 안내 문구는 바로(모아 두지 않고) 그린다 — 멈춘 뒤에도 보여야 하는 글 */
+function liveOutNotice(text, isErr) {
+  liveOutFlush(); var m = LIVE_OUT.mute; LIVE_OUT.mute = false; liveOutAdd(text, !!isErr); LIVE_OUT.mute = m;
+  var log = document.getElementById('termLiveLog'); if (log) log.scrollTop = log.scrollHeight;
 }
 
 function submitLiveInput(e) {
@@ -1338,10 +1386,16 @@ function submitLiveInput(e) {
   inp.focus();
 }
 
+var wsCurFinish = null;          // 지금 실행의 '끝내기' (runCode 안에서 정해진다)
 function stopInteractiveCode() {
   if (typeof GUI !== 'undefined' && GUI.key) { guiClose(false); appendLiveOutput('\n[사용자에 의해 중단됨]\n', false); return; }
-  if (activeTermSocket && activeTermSocket.readyState === WebSocket.OPEN) {
-    activeTermSocket.send(JSON.stringify({ action: 'stop' }));
+  var ws = activeTermSocket;
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    liveOutMute();                                                   // 쏟아지던 출력은 더 그리지 않는다 (화면이 바로 풀리게)
+    try { ws.send(JSON.stringify({ action: 'stop' })); } catch (e) {}
+    liveOutNotice('\n[사용자에 의해 중단됨]\n', false);
+    if (typeof wsCurFinish === 'function') wsCurFinish(-1);          // 서버 답을 기다리지 않고 화면은 바로 '종료'로
+    setTimeout(function() { try { ws.close(); } catch (e) {} }, 250);   // 연결이 닫히면 서버·내 PC 러너가 프로세스를 확실히 끝낸다
   }
 }
 
@@ -1458,6 +1512,7 @@ async function runCode(opts) {
   if (termPanel) termPanel.classList.remove('collapsed');
   setTerminalTab('interactive');
 
+  liveOutReset();                                                // 이전 실행의 남은 출력·제한을 지우고 새로 시작
   var log = document.getElementById('termLiveLog');
   if (log) {
     log.innerHTML = '<div style="color:#06b6d4; font-weight:600;">// ' + (wantDbg ? '🐞 디버그 시작: ' : '▶ ') + escapeHtml(wsFileBase(fobj)) + (wantDbg ? '' : ' 실행') + '</div><div style="color:#8b949e; margin-bottom:8px;">// 프로그램이 입력을 기다리면 아래 INPUT 칸에 값을 넣고 Enter 를 누르세요.</div>';
@@ -1520,14 +1575,17 @@ async function runCode(opts) {
   };
 
   ws.onmessage = function(ev) {
+    if (finished) return;                          // 이미 끝났거나(중지·출력 초과) 끊은 뒤에 남아서 오는 조각은 무시
     try {
       var msg = JSON.parse(ev.data);
       if (msg.type === 'hello') {
         if (msg.ok) { if (!started) sendStart(); }
         else { appendLiveOutput('\n[연결 코드가 맞지 않아요. 상단의 🖥️ 내 PC 에서 다시 연결해 주세요]\n', true); runnerSetToken(''); RUNNER.last = null; finishRun(-1); try { ws.close(); } catch (e2) {} }
       } else if (msg.type === 'stdout') {
+        if (!liveOutBudget(msg.data)) { floodStop(); return; }
         appendLiveOutput(msg.data, false); if (!isLocal && runText.length < 20000) runText += msg.data;
       } else if (msg.type === 'stderr') {
+        if (!liveOutBudget(msg.data)) { floodStop(); return; }
         appendLiveOutput(msg.data, true); if (!isLocal && runText.length < 20000) runText += msg.data;
         if (errText.length < 20000) errText += msg.data;
       } else if (msg.type === 'dbg') {
@@ -1557,6 +1615,16 @@ async function runCode(opts) {
   };
 
   var finished = false;
+  wsCurFinish = function(code) { finishRun(code); };
+  /* 출력이 너무 많으면(무한 반복으로 계속 쏟아질 때) 화면이 멈추기 전에 스스로 중단한다 */
+  function floodStop() {
+    if (finished) return;
+    liveOutMute();
+    try { ws.send(JSON.stringify({ action: 'stop' })); } catch (e) {}
+    liveOutNotice('\n[출력이 너무 많아서 실행을 중단했어요]\n끝나지 않는 반복(while True 등)이 계속 출력하고 있지 않은지 확인해 보세요.\n', true);
+    finishRun(-1);
+    setTimeout(function() { try { ws.close(); } catch (e) {} }, 250);
+  }
   function finishRun(code) {
     if (finished) return; finished = true;          // 종료 메시지 뒤에 연결이 닫혀도 결과 표시를 덮어쓰지 않는다
     wsRunning = false;
@@ -1632,6 +1700,43 @@ function pvMessageDoc(title, detail) {
   return '<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">' + pvBridgeScript() +
     '</head><body style="font-family:system-ui,-apple-system,sans-serif;color:#444;padding:28px 22px;line-height:1.6"><h2 style="margin:0 0 8px;font-size:18px">' + escapeHtml(title) + '</h2><p style="margin:0;font-size:14px;color:#777">' + escapeHtml(detail) + '</p></body></html>';
 }
+/* 미리보기 무한 반복 방어: 미리보기 안의 JS 는 이 화면과 같은 탭에서 돌아서, while(true){} 처럼 끝나지 않는 반복이 있으면 탭 전체가 멈춘다.
+   눈에 띄는 무한 반복(while(true) · while(1) · for(;;))에만 '횟수가 200만 번을 넘고 3초 넘게 안 끝나면 오류를 내는' 검사를 끼워 넣어 멈추기 전에 끊는다.
+   · 가끔 await 로 쉬면서 도는 반복(예: 1초마다 확인)은 횟수가 적어서 끊기지 않는다 · 코드의 다른 부분과 줄 번호는 그대로다(같은 줄 안에 넣는다)
+   · 다른 모양의 무한 반복(while(i>=0){i++} 같은)까지는 잡지 못한다 */
+var PV_LG = 0;
+function pvGuardLoops(code) {
+  code = String(code);
+  var out = '', i = 0, n = code.length, re = /(?:while\s*\(\s*(?:true|1|!0|!!1)\s*\)|for\s*\(\s*;\s*;\s*\))\s*\{/y, j;
+  while (i < n) {
+    var c = code.charAt(i), d = code.charAt(i + 1);
+    if (c === '/' && d === '/') { j = code.indexOf('\n', i); j = j < 0 ? n : j; out += code.slice(i, j); i = j; continue; }                 // 줄 주석 안은 그대로
+    if (c === '/' && d === '*') { j = code.indexOf('*/', i + 2); j = j < 0 ? n : j + 2; out += code.slice(i, j); i = j; continue; }       // 블록 주석 안은 그대로
+    if (c === '"' || c === "'" || c === '`') {                                                                                           // 문자열 안은 그대로 (글자가 바뀌거나 문법이 깨지지 않게)
+      j = i + 1; while (j < n && code.charAt(j) !== c) { if (code.charAt(j) === '\\') j++; j++; }
+      out += code.slice(i, j + 1); i = j + 1; continue;
+    }
+    if ((c === 'w' || c === 'f') && (i === 0 || !/[\w$.]/.test(code.charAt(i - 1)))) {
+      re.lastIndex = i; var m = re.exec(code);
+      if (m) {
+        var v = 'window.__pvlg' + (++PV_LG);
+        out += 'for(' + v + '=[Date.now(),0];true;){if(((++' + v + '[1])&4095)===0&&' + v + '[1]>2e6&&Date.now()-' + v + '[0]>3000)throw new Error("무한 반복이 감지되어 중단했어요 (같은 반복이 3초 넘게 끝나지 않았어요)");';
+        i += m[0].length; continue;
+      }
+    }
+    out += c; i++;
+  }
+  return out;
+}
+/* HTML 안의 <script> 본문(외부 파일을 합친 것 포함)에 무한 반복 방어를 입힌다. JSON 같은 스크립트가 아닌 것은 건드리지 않는다 */
+function pvGuardDoc(html) {
+  return html.replace(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi, function(all, attrs, body) {
+    if (/\bsrc\s*=/i.test(attrs)) return all;
+    var t = /\btype\s*=\s*["']?([^"'\s>]+)/i.exec(attrs);
+    if (t && !/^(text\/javascript|application\/javascript|module)$/i.test(t[1])) return all;
+    return '<script' + attrs + '>' + pvGuardLoops(body) + '</script>';
+  });
+}
 /* 같은 프로젝트의 CSS·JS 파일을 HTML 안으로 합쳐서, 링크가 끊기지 않는 한 장짜리 문서로 만든다 */
 function pvBuildDoc(path) {
   var raw = pvFileRaw(path);
@@ -1647,6 +1752,7 @@ function pvBuildDoc(path) {
     var p = pvResolve(dir, src), js = p ? pvFileRaw(p) : null;
     return js == null ? tag : '<script' + a1 + a2 + ' data-src="' + escapeHtml(p) + '">\n' + js.replace(/<\/script/gi, '<\\/script') + '\n<\/script>';
   });
+  html = pvGuardDoc(html);                                   // 끝나지 않는 반복이 탭 전체를 멈추지 않게
   var bridge = pvBridgeScript();
   if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, function(m) { return m + bridge; });
   return bridge + html;

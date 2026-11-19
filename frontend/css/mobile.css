@@ -72,7 +72,7 @@
   .home-hero{grid-template-columns:minmax(0,1fr); gap:22px;}
   .home-pad{padding-top:14px;}
   .home-hero-right{width:100%;}
-  .widget-dyn-grid, .widget-dyn-grid.bento{grid-template-columns:1fr !important;}
+  .widget-dyn-grid, .widget-dyn-grid.bento{grid-template-columns:minmax(0,1fr) !important;}          /* 1fr 만 쓰면 긴 제목·이름이 칸을 화면 밖까지 늘려서 위젯이 잘렸다 */
   .dyn-widget.wide{grid-column:auto !important;}
   .proj-row{grid-template-columns:1fr !important;}
   .prompt-box{width:100%; max-width:100%;}

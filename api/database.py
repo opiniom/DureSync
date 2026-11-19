@@ -17,6 +17,23 @@ engine = create_async_engine(
     future=True
 )
 
+# SQLite 동시 접속 설정 — 접속자가 늘어 여러 요청이 동시에 저장할 때 "database is locked" 로 실패하지 않게 한다.
+#   · WAL: 읽는 쪽과 쓰는 쪽이 서로를 기다리지 않는다 (기본 방식은 쓰는 동안 읽기도 막는다)
+#   · busy_timeout: 다른 저장이 끝나기를 최대 10초 기다렸다가 시도한다 (바로 실패하지 않음)
+#   · synchronous=NORMAL: WAL 에서 안전하면서 저장이 훨씬 빠르다
+if engine.dialect.name == "sqlite":
+    from sqlalchemy import event as _sa_event
+
+    @_sa_event.listens_for(engine.sync_engine, "connect")
+    def _sqlite_pragmas(dbapi_conn, _record):
+        cur = dbapi_conn.cursor()
+        try:
+            cur.execute("PRAGMA journal_mode=WAL")
+            cur.execute("PRAGMA synchronous=NORMAL")
+            cur.execute("PRAGMA busy_timeout=10000")
+        finally:
+            cur.close()
+
 # 세션 팩토리
 async_session_maker = async_sessionmaker(
     engine, 

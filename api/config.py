@@ -34,9 +34,14 @@ class Settings(BaseSettings):
 
     # 대화형 터미널(/ws/terminal) 한 번 실행의 최대 시간(초). 이 시간이 지나면 강제로 끝낸다 (무한 반복 방지)
     TERMINAL_MAX_SECONDS: int = 300
+    TERMINAL_MAX_CONCURRENT: int = 4   # 서버 전체에서 동시에 돌릴 수 있는 코드 실행 수 (작은 서버가 메모리 부족으로 멈추지 않게). 넘으면 잠시 기다리라고 안내
+    TERMINAL_MAX_PER_USER: int = 2     # 한 사람이 동시에 돌릴 수 있는 실행 수 (탭을 여러 개 열어도)
 
     ACCESS_LOG_DAYS: int = 90      # 사용자 접속 기록(IP) 보관 기간(일). 지나면 자동 삭제
     INQUIRY_KEEP_DAYS: int = 90    # 완료된 1:1 문의를 보관하는 기간(일, 완료한 날부터). 지나면 자동 삭제 (접수·처리 중인 문의는 지우지 않는다)
+    GUEST_KEEP_DAYS: int = 60       # 초대 링크로 참여한 임시(게스트) 계정을 마지막 접속 뒤 이 기간(일)이 지나면 정리한다 (계정이 한없이 쌓이지 않게)
+    BACKUP_KEEP: int = 7            # 서버 안에 보관하는 DB 자동 백업 개수(하루 한 번 · 7개 = 일주일치). 서버 밖으로 복사해 두는 건 따로 해야 한다 (README '백업')
+    PROJECT_MAX_MEMBERS: int = 6   # 프로젝트 한 개의 최대 인원(팀장 포함). 이메일 초대·초대 링크·게스트 참여·모집 수락 모두 이 수를 넘지 못한다 (베타 기간 서버 보호)
     PROJECT_TRASH_DAYS: int = 14   # 삭제한 프로젝트를 휴지통에 보관하는 기간(일). 지나면 자동으로 영구 삭제된다
     # 팀 통화방(WebRTC) 연결 서버. 같은 네트워크 밖(다른 집·카페 등)에서 연결하려면 TURN 중계 서버가 필요하다.
     #  - STUN: 내 공인 주소를 알아내는 용도 (무료 공용 서버)
@@ -77,6 +82,10 @@ class Settings(BaseSettings):
     NAVER_CLIENT_ID: str = ""
     NAVER_CLIENT_SECRET: str = ""
     PUBLIC_BASE_URL: str = "http://localhost:8000"
+    GOOGLE_SITE_VERIFICATION: str = ""       # 구글 서치콘솔 '소유권 확인(HTML 태그)'의 content 값 — 메인 홈(/) 머리말에 넣어 준다
+    NAVER_SITE_VERIFICATION: str = ""        # 네이버 서치어드바이저 '소유확인(HTML 태그)'의 content 값
+    OPERATOR_NAME: str = "DureSync 운영팀"     # 이용약관·개인정보처리방침에 적히는 운영 주체 이름
+    PRIVACY_CONTACT_EMAIL: str = ""            # (선택) 개인정보 문의 이메일. 비워 두면 앱 안의 '문의하기'만 안내한다
     FRONTEND_URL: str = "/ui"
     FRONTEND_DIR: str = ""
 

@@ -416,6 +416,51 @@ powershell -ExecutionPolicy Bypass -File c:\backend\scripts\test_java.ps1
 
 ---
 
+## 운영 안내 (서버)
+
+**배포 뒤 점검 · 디스크 정리** — 서버에서 실행한다.
+```bash
+bash ~/code-lounge/scripts/post_deploy_check.sh        # 주요 주소 12곳 + 메모리·디스크·최근 백업을 한 번에 확인
+bash ~/code-lounge/scripts/cleanup_docker.sh           # 배포할 때마다 쌓이는 이전 이미지·빌드 캐시 삭제 (다음 빌드는 한 번 느려진다)
+```
+배포(빌드)를 할 때마다 디스크가 1~2GB씩 늘어난다. 디스크가 70%를 넘으면 `cleanup_docker.sh`를 돌린다.
+
+**DB 자동 백업** — 서버가 켜져 있는 동안 하루 한 번(마지막 백업이 23시간 지나면) `data/backups/app-날짜-시각.db.gz`를 만들고 최근 7개(`BACKUP_KEEP`)만 남긴다. SQLite 온라인 백업이라 서비스 중에도 안전하다.
+같은 서버 안의 복사본이라 서버가 통째로 사라지는 사고는 막지 못한다 → **가끔(일주일에 한 번쯤) 내 컴퓨터로 내려받아 따로 보관한다.**
+· 가장 쉬운 방법: **관리자 페이지 > 시스템 > DB 백업**에서 `내려받기` 버튼 (최고관리자만 · 받을 때마다 감사 기록이 남는다. `지금 백업 만들기` 버튼으로 바로 만들 수도 있다).
+· 터미널로 받으려면 (내 컴퓨터에서):
+```bash
+scp ubuntu@duresync.cloud:~/code-lounge/data/backups/app-*.db.gz ~/Desktop/duresync-backup/
+```
+백업 파일에는 가입자 이메일 같은 개인정보가 들어 있으니 공개된 곳에 올리지 않는다.
+복원: `gunzip -c app-날짜.db.gz > app.db` 로 풀어 `data/app.db` 자리에 두고(서버를 잠깐 멈춘 뒤) 다시 켠다. 풀기 전에 `data/app.db-wal` · `app.db-shm`은 지운다.
+
+**서버 설정 바꾸기(.env)** — 아래 표의 값은 스크립트로 안전하게 바꾼다(바꾸기 전에 `.env.bak-날짜`로 복사해 두고, 허용된 이름만 받는다). 적용하려면 `--restart`를 붙이거나 서버를 다시 시작한다.
+```bash
+bash ~/code-lounge/scripts/set_env.sh OPERATOR_NAME "DureSync 운영팀"
+bash ~/code-lounge/scripts/set_env.sh PRIVACY_CONTACT_EMAIL "공개해도 되는 이메일" --restart
+```
+
+**서버 보호 한도(.env 로 조절)**
+
+| 설정 | 기본값 | 뜻 |
+|---|---|---|
+| `TERMINAL_MAX_CONCURRENT` | 4 | 서버 전체에서 동시에 돌릴 수 있는 코드 실행 수 (넘으면 "사람이 많아요" 안내) |
+| `TERMINAL_MAX_PER_USER` | 2 | 한 사람이 동시에 돌릴 수 있는 실행 수 |
+| `TERMINAL_MAX_SECONDS` | 300 | 한 번 실행의 최대 시간(초) |
+| `PROJECT_MAX_MEMBERS` | 6 | 프로젝트 한 개의 최대 인원(팀장 포함) |
+| `GUEST_KEEP_DAYS` | 60 | 초대 링크 임시(게스트) 계정을 마지막 접속 뒤 이 기간이 지나면 정리 |
+| `INQUIRY_KEEP_DAYS` | 90 | 완료된 1:1 문의를 보관하는 기간 |
+| `ACCESS_LOG_DAYS` | 90 | 접속 기록(IP) 보관 기간 |
+| `BACKUP_KEEP` | 7 | 서버 안에 보관하는 DB 백업 개수 |
+| `GOOGLE_SITE_VERIFICATION` · `NAVER_SITE_VERIFICATION` | (비움) | 구글 서치콘솔 · 네이버 서치어드바이저의 '소유 확인(HTML 태그)' content 값. 넣으면 메인 홈 머리말에 태그가 들어간다 |
+| `OPERATOR_NAME` | DureSync 운영팀 | 이용약관·개인정보처리방침에 적히는 운영 주체 |
+| `PRIVACY_CONTACT_EMAIL` | (비움) | 개인정보 문의 이메일 (비우면 앱 안의 '문의하기'만 안내) |
+
+서버 메모리가 작을수록(예: 1GB) `TERMINAL_MAX_CONCURRENT`를 낮게, 넉넉하면 높게 잡는다. 로그인·초대 참여는 같은 IP에서 짧은 시간에 너무 많이 시도하면 429로 막는다(로그인 10분에 30번, 게스트 참여 1시간에 100번).
+
+**검색엔진 · 약관** — `/`, `/business`, `/institution`은 서버가 제목·설명·공유 미리보기·구조화 데이터와 요약 글을 넣어 내보낸다(`api/services/seo.py`). `/app` 이하(로그인 필요)는 검색에서 제외(noindex). `/robots.txt`, `/sitemap.xml`, `/terms`(이용약관), `/privacy`(개인정보 처리방침)가 있다 — 글은 `api/services/legal.py`, 날짜(`EFFECTIVE`)와 운영 방식이 바뀌면 함께 고친다. 새 소개 페이지를 만들면 `seo.py`의 `PAGES`와 `sitemap_xml()`에도 넣는다.
+
 ## 5. 데이터베이스 파일 관리
 
 * SQLite 데이터베이스 파일은 [`c:\backend\data\app.db`](file:///c:/backend/data/app.db)에 자동 생성 및 보존됩니다.

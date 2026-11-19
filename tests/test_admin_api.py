@@ -144,7 +144,8 @@ try:
     s, _ = api("POST", "/api/admin/announcements", "op", {"title": "점검 안내", "message": "오늘 밤 12시 점검", "link": "javascript:alert(1)"}); chk("위험한 링크 거부", s == 400, s)
     s, _ = api("POST", "/api/admin/announcements", "u2", {"title": "x", "message": "y"}); chk("일반 사용자는 공지 불가", s == 403, s)
     s, an = api("POST", "/api/admin/announcements", "op", {"title": "점검 안내", "message": "오늘 밤 12시 점검", "link": "/app/community"}); chk("공지 발송", s == 200 and an["sent_count"] == 5, an)
-    s, nt = api("GET", "/api/notifications", "u2"); chk("사용자 알림함에 공지 도착", s == 200 and any(n["category"] == "notice" and "점검 안내" in n["title"] for n in nt), nt if s != 200 else "")
+    s, nt = api("GET", "/api/notifications", "u2"); chk("공지는 알림함에 쌓이지 않는다(공지사항에 따로)", s == 200 and not any(n["category"] == "notice" for n in nt), nt if s != 200 else "")
+    s, pub = api("GET", "/api/announcements", "u2"); chk("사용자 공지사항 목록에 도착", s == 200 and any("점검 안내" in a["title"] for a in pub["items"]), pub)
     s, hist = api("GET", "/api/admin/announcements", "op"); chk("공지 기록", len(hist["items"]) == 1 and hist["items"][0]["sent_count"] == 5)
     # 9) 감사 로그 · 시스템
     s, au = api("GET", "/api/admin/audit", "op"); acts = [a["action"] for a in au["items"]]

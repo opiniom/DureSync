@@ -8,6 +8,7 @@ from database import get_db
 from models import User, Project, ProjectMember, ChatMessage, CalendarEvent, ProjectFile, MeetingDoc, CallRoom, CommunityPost
 from schemas import ProjectCreate, ProjectRename, ProjectResponse, MemberBrief, InviteRequest, MemberRoleUpdate
 from services.auth_service import get_current_user
+from services.team_limit import ensure_room
 from services.access import member_project_ids, get_member_project, project_users, project_members_info
 
 router = APIRouter(prefix="/api/projects", tags=["Projects"])
@@ -84,6 +85,7 @@ async def invite_member(
     )).scalar_one_or_none() is not None
     if already:
         raise HTTPException(status_code=400, detail="이미 이 프로젝트의 팀원이에요.")
+    await ensure_room(db, project)                       # 팀장 포함 최대 인원
     db.add(ProjectMember(project_id=project.id, user_id=target.id, role="member"))
     await db.commit()
     return await _to_response(db, project, current_user)

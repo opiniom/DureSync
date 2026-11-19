@@ -17,7 +17,7 @@ var SA_TABS = [
   { k:'system', t:'시스템', i:'<rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01"/>' }
 ];
 var SA_ACTIONS = { 'user.suspend':'사용자 정지', 'user.unsuspend':'정지 해제', 'user.admin_on':'운영자 지정', 'user.admin_off':'운영자 해제', 'user.delete':'계정 삭제(탈퇴 처리)', 'report.hide':'신고 글 숨김', 'report.delete':'신고 글 삭제', 'report.dismiss':'신고 기각', 'report.restore':'신고 글 복구',
-  'post.pin':'글 고정', 'post.unpin':'글 고정 해제', 'post.hide':'글 숨김', 'post.unhide':'글 숨김 해제', 'post.delete':'글 삭제', 'post.restore':'글 복구', 'project.delete':'프로젝트 삭제(휴지통)', 'project.restore':'프로젝트 복구', 'project.purge':'프로젝트 영구 삭제', 'lang.enable':'언어 공개', 'lang.disable':'언어 비공개', 'lang.install':'언어 설치', 'lang.default':'언어 기본 버전 지정', 'lang.remove':'언어 버전 삭제', 'crawler.run':'크롤러 수동 실행', 'event.delete':'행사 삭제', 'inquiry.reply':'문의 답변', 'inquiry.status':'문의 상태 변경', 'announce.send':'공지 게시', 'announce.delete':'공지 삭제', 'gate.login':'관리자 페이지 접속', 'gate.lock':'코드 연속 오입력 잠금', 'gate.setup':'관리자 코드 최초 설정', 'gate.change':'관리자 코드 변경' };
+  'post.pin':'글 고정', 'post.unpin':'글 고정 해제', 'post.hide':'글 숨김', 'post.unhide':'글 숨김 해제', 'post.delete':'글 삭제', 'post.restore':'글 복구', 'project.delete':'프로젝트 삭제(휴지통)', 'project.restore':'프로젝트 복구', 'project.purge':'프로젝트 영구 삭제', 'lang.enable':'언어 공개', 'lang.disable':'언어 비공개', 'lang.install':'언어 설치', 'lang.default':'언어 기본 버전 지정', 'lang.remove':'언어 버전 삭제', 'crawler.run':'크롤러 수동 실행', 'event.delete':'행사 삭제', 'inquiry.reply':'문의 답변', 'inquiry.status':'문의 상태 변경', 'backup.run':'백업 만들기', 'backup.download':'백업 내려받기', 'announce.send':'공지 게시', 'announce.delete':'공지 삭제', 'gate.login':'관리자 페이지 접속', 'gate.lock':'코드 연속 오입력 잠금', 'gate.setup':'관리자 코드 최초 설정', 'gate.change':'관리자 코드 변경' };
 var SA_CATS = { question:'질문·과제 도움', recruit:'팀원 구하기', study:'스터디 모집', showcase:'결과물·피드백', share:'정보·후기', free:'자유', comment:'댓글' };
 
 /* ----- 작은 도구들 ----- */
@@ -616,6 +616,37 @@ function saAuditAdminLoad(){
 }
 
 /* ----- 시스템 ----- */
+/* DB 백업: 서버가 하루 한 번 자동으로 만들어 둔 백업을 보고, 내 컴퓨터로 내려받는다 (서버가 통째로 사라지는 사고에 대비해 가끔 내려받아 두기) */
+function saDownloadBackup(name){
+  fetch(API_BASE + '/api/admin/backups/' + encodeURIComponent(name), { headers:{ 'Authorization':'Bearer ' + authToken, 'X-Admin-Token':saToken() } }).then(function(res){
+    if(res.ok) return res.blob();
+    return res.json().catch(function(){ return {}; }).then(function(e){ throw new Error(e.detail || '내려받지 못했어요.'); });
+  }).then(function(blob){
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+    pushToast('✅', '백업을 내려받았어요', '가입자 정보가 들어 있으니 안전한 곳에만 보관해 주세요.');
+  }).catch(saErr);
+}
+function saBackupPanel(main){
+  var box = saH('div'); var pan = saPanel('DB 백업', '최고관리자만 · 하루 한 번 자동으로 만들어져요', [box]); main.appendChild(pan);
+  var draw = function(){
+    saApi('/backups').then(function(r){
+      box.innerHTML = '';
+      var age = r.latest_age_hours;
+      box.appendChild(saH('div', { class:'sa-note ' + (age == null || age > 30 ? 'warn' : 'info') }, [saH('b', { text: age == null ? '아직 백업이 없어요' : '마지막 백업: ' + (age < 1 ? '1시간 안에' : age < 48 ? Math.round(age) + '시간 전' : Math.round(age / 24) + '일 전') }), saH('span', { text:'서버 안에 최근 ' + r.keep + '개까지 보관해요. 같은 서버 안의 복사본이라, 서버가 통째로 사라지는 사고에 대비해 일주일에 한 번쯤 내려받아 내 컴퓨터에 따로 보관하세요.' })]));
+      var list = saH('ul', { class:'sa-list' }, r.items.map(function(b){
+        return saH('li', {}, [saH('div', {}, [saH('b', { text:b.name }), saH('span', { text:saBytes(b.size_bytes) + ' · ' + saWhen(b.created_at) })]),
+          saH('div', { class:'sa-right' }, [saH('button', { class:'btn', type:'button', text:'내려받기', onclick:function(){ saDownloadBackup(b.name); } })])]);
+      }));
+      box.appendChild(r.items.length ? list : saEmpty('아직 만들어진 백업이 없어요. 서버를 켠 지 얼마 안 됐다면 잠시 뒤에 생겨요.'));
+      box.appendChild(saH('div', { class:'sa-form-row', style:'margin-top:12px' }, [saH('button', { class:'btn primary', type:'button', text:'지금 백업 만들기', onclick:function(ev){
+        var b = ev.currentTarget; b.disabled = true;
+        saPost('/backups/run').then(function(){ pushToast('✅', '백업을 만들었어요', ''); draw(); }).catch(function(e){ b.disabled = false; saErr(e); });
+      } }), saH('span', { class:'sa-faint', text:'내려받은 파일에는 가입자 이메일 등 개인정보가 들어 있어요. 공개된 곳에 올리지 마세요.' })]));
+    }).catch(function(e){ box.innerHTML = ''; box.appendChild(saEmpty(e.message || '불러오지 못했어요.')); });
+  };
+  draw();
+}
 function saSystem(main){
   saApi('/system').then(function(s){
     main.innerHTML = '';
@@ -627,6 +658,7 @@ function saSystem(main){
     var max = Math.max.apply(null, Object.keys(s.tables).map(function(k){ return s.tables[k]; }).concat([1]));
     var labels = { users:'사용자', projects:'프로젝트', chat_messages:'채팅 메시지', project_files:'워크스페이스 파일', meeting_docs:'회의록', calendar_events:'일정', notifications:'알림', community_posts:'커뮤니티 글', crawled_events:'수집된 행사', audit_logs:'감사 로그', access_logs:'접속 기록' };
     main.appendChild(saPanel('데이터 규모', '테이블별 행 수', [saH('div', { class:'sa-bar-list' }, Object.keys(s.tables).map(function(k){ var f = saH('i'); f.style.width = Math.max(2, s.tables[k] / max * 100) + '%'; return saH('div', {}, [saH('span', { text:labels[k] || k }), saH('div', { class:'sa-bar' }, [f]), saH('b', { text:saN(s.tables[k]) })]); }))]));
+    if(saIsSuper()) saBackupPanel(main);
     if(saIsSuper()){
       var cur = saH('input', { class:'sa-input', type:'password', inputmode:'numeric', maxlength:'6', placeholder:'현재 코드 6자리', autocomplete:'off' });
       var nw = saH('input', { class:'sa-input', type:'password', inputmode:'numeric', maxlength:'6', placeholder:'새 코드 6자리', autocomplete:'off' });

@@ -230,7 +230,7 @@ html[data-motion="reduce"] .dure-orbit, html[data-motion="reduce"] .dn span, htm
 .wp-toggle.added{background:var(--text); color:var(--bg-elevated); border-color:var(--text);}
 
 .widget-dyn-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:12px; width:100%;}
-.dyn-widget{position:relative; padding:16px; display:flex; flex-direction:column; gap:10px;}
+.dyn-widget{position:relative; min-width:0; padding:16px; display:flex; flex-direction:column; gap:10px;}
 .dyn-widget.wide{grid-column:span 2;}
 .dyn-close{
   position:absolute; top:10px; right:10px; width:22px; height:22px; border-radius:50%; border:none;

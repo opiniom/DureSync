@@ -15,6 +15,8 @@ from schemas import (
 from services.auth_service import get_current_user, get_current_user_optional, create_access_token
 from services.access_log import log_access
 from services.access import get_member_project
+from services.team_limit import ensure_room
+from services.rate_limit import limiter
 
 router = APIRouter(tags=["Invitations"])
 
@@ -165,6 +167,7 @@ async def join_by_invite(
             project_title=project.title
         )
 
+    await ensure_room(db, project)                       # 팀장 포함 최대 인원
     # 신규 팀원으로 가입 처리
     db.add(ProjectMember(project_id=project.id, user_id=current_user.id, role="member"))
     inv.used_count += 1
@@ -186,7 +189,7 @@ def _clean_name(raw: str) -> str:
     return re.sub(r"\s+", " ", name).strip()[:20]
 
 
-@router.post("/api/invitations/{token}/guest-join", response_model=GuestJoinResponse)
+@router.post("/api/invitations/{token}/guest-join", response_model=GuestJoinResponse, dependencies=[Depends(limiter("guest_join", 100, 3600, "초대 링크 참여"))])
 async def guest_join_by_invite(
     token: str,
     data: GuestJoinRequest,
@@ -218,6 +221,7 @@ async def guest_join_by_invite(
     if not project:
         raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
 
+    await ensure_room(db, project)                       # 팀장 포함 최대 인원 (임시 계정을 만들기 전에 확인)
     user = User(
         email=f"guest-{secrets.token_hex(8)}@guest.sync.local",
         hashed_password="",

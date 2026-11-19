@@ -263,6 +263,7 @@ function hbBuildFoot(){
       '<div><h4>비즈니스</h4><a href="/business" onclick="return hbLink(event, \'landing\')">비즈니스 소개</a><button type="button" onclick="hbAct(\'biz|ldFeatures\')">기능</button><button type="button" onclick="hbAct(\'biz|ldWho\')">대상별</button><button type="button" onclick="hbAct(\'hub|hbHow\')">시작하는 법</button></div>' +
       '<div><h4>기관용</h4><a href="/institution" onclick="return hbLink(event, \'institution\')">학교 · 교수용</a><button type="button" onclick="hbNotice()">도입 문의</button></div>' +
       '<div><h4>알아보기</h4><button type="button" onclick="hbAct(\'hub|hbPlans\')">구독 · 요금</button><button type="button" onclick="hbAct(\'hub|hbFaq\')">자주 묻는 질문</button></div>' +
+      '<div><h4>약관</h4><a href="/terms">이용약관</a><a href="/privacy">개인정보 처리방침</a></div>' +
     '</div></div>';
 }
 

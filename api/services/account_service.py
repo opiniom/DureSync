@@ -225,6 +225,21 @@ async def purge_done_inquiries(db: AsyncSession) -> int:
     return len(ids)
 
 
+async def purge_stale_guests(db: AsyncSession) -> int:
+    """초대 링크로 들어온 임시(게스트) 계정 중 GUEST_KEEP_DAYS 일 동안 접속하지 않은 것을 정리한다.
+    탈퇴와 같은 방식으로 처리(팀에서 나가고 개인 데이터 삭제, 팀에 남긴 기록은 '탈퇴한 사용자' 이름으로 남음)하되, 관리자 '탈퇴 기록'에는 남기지 않는다."""
+    from config import settings
+    cutoff = datetime.utcnow() - timedelta(days=max(7, int(settings.GUEST_KEEP_DAYS or 60)))
+    rows = (await db.execute(select(User).where(User.oauth_provider == "invite", User.withdrawn_at.is_(None),
+                                                func.coalesce(User.last_seen_at, User.created_at) < cutoff).limit(50))).scalars().all()
+    for u in rows:
+        uid = u.id
+        await withdraw_user(db, u, reason=None, by="system")
+        await db.execute(delete(WithdrawalLog).where(WithdrawalLog.user_id == uid))
+        await db.commit()
+    return len(rows)
+
+
 async def purge_loop() -> None:
     """서버가 켜져 있는 동안 한 시간마다 만료된 탈퇴 기록·접속 기록·휴지통의 프로젝트·오래된 완료 문의를 지운다 (관리자 페이지를 열지 않아도 기간이 지나면 사라진다)"""
     from database import async_session_maker
@@ -244,6 +259,9 @@ async def purge_loop() -> None:
                 q = await purge_done_inquiries(db)
                 if q:
                     logger.info("보관 기간이 지난 완료 문의 %d건 삭제", q)
+                g = await purge_stale_guests(db)
+                if g:
+                    logger.info("오래 접속하지 않은 임시(게스트) 계정 %d개 정리", g)
         except asyncio.CancelledError:
             raise
         except Exception:

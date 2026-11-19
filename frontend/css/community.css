@@ -121,3 +121,5 @@ html[data-motion="reduce"] .cm-card{animation:none;}
 .cm-badge{white-space:nowrap; flex:0 0 auto;}
 .cm-foot .who{flex:1 1 auto; min-width:0;} .cm-foot .who > span{white-space:nowrap; flex:0 0 auto;} .cm-foot .who b{flex:0 1 auto; min-width:0;}
 .cm-foot .cm-counts{flex:0 0 auto;}
+
+.cm-field .cm-hint{font-size:11.5px; color:var(--text-faint); line-height:1.5; font-weight:500;}

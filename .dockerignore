@@ -8,3 +8,9 @@ data
 .env
 *.pem
 *.key
+# 이미지에 필요 없는 큰 폴더: 설치한 언어(langs)는 compose 볼륨(./langs:/opt/langs)으로 붙고, 백업·발표 자료는 앱이 쓰지 않는다.
+# (빼기 전에는 서버의 langs 가 빌드 때마다 1.6GB 씩 전송돼 빌드가 느리고 캐시가 불었다)
+langs
+data_backup*
+*.pptx
+presentation*
