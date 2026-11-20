@@ -639,10 +639,10 @@ function saBackupPanel(main){
           saH('div', { class:'sa-right' }, [saH('button', { class:'btn', type:'button', text:'내려받기', onclick:function(){ saDownloadBackup(b.name); } })])]);
       }));
       box.appendChild(r.items.length ? list : saEmpty('아직 만들어진 백업이 없어요. 서버를 켠 지 얼마 안 됐다면 잠시 뒤에 생겨요.'));
-      box.appendChild(saH('div', { class:'sa-form-row', style:'margin-top:12px' }, [saH('button', { class:'btn primary', type:'button', text:'지금 백업 만들기', onclick:function(ev){
+      box.appendChild(saH('div', { style:'display:flex; flex-direction:column; align-items:flex-start; gap:10px; margin-top:14px' }, [saH('button', { class:'btn primary', type:'button', text:'지금 백업 만들기', onclick:function(ev){
         var b = ev.currentTarget; b.disabled = true;
         saPost('/backups/run').then(function(){ pushToast('✅', '백업을 만들었어요', ''); draw(); }).catch(function(e){ b.disabled = false; saErr(e); });
-      } }), saH('span', { class:'sa-faint', text:'내려받은 파일에는 가입자 이메일 등 개인정보가 들어 있어요. 공개된 곳에 올리지 마세요.' })]));
+      } }), saH('div', { class:'sa-faint', style:'line-height:1.6', text:'내려받은 파일에는 가입자 이메일 등 개인정보가 들어 있어요. 공개된 곳에 올리지 마세요.' })]));
     }).catch(function(e){ box.innerHTML = ''; box.appendChild(saEmpty(e.message || '불러오지 못했어요.')); });
   };
   draw();

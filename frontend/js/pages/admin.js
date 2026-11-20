@@ -124,8 +124,7 @@ function mpRenderAbout(){
   var p = me.profile, has = p.headline || p.bio || p.skills.length || p.links.length;
   var c = mpEl('div', 'card mp-about');
   if(!has){
-    c.appendChild(mpEl('b', null, '프로필을 채워 보세요')); c.appendChild(mpEl('span', 'mp-about-tip', '한 줄 소개, 기술 스택, 링크를 적으면 팀원이 내 프로필에서 볼 수 있어요.'));
-    var b = mpEl('button', 'btn primary', '프로필 편집'); b.onclick = openProfileModal; c.appendChild(b);
+    c.appendChild(mpEl('b', null, '프로필을 채워 보세요')); c.appendChild(mpEl('span', 'mp-about-tip', '위쪽의 ‘프로필 편집’에서 한 줄 소개, 기술 스택, 링크를 적으면 팀원이 내 프로필에서 볼 수 있어요.'));      // (편집 단추는 맨 위에 하나만 둔다 — 여기에 또 두면 똑같은 단추가 두 개로 보인다)
   } else {
     if(p.headline) c.appendChild(mpEl('div', 'mp-headline', p.headline));
     if(p.bio) c.appendChild(mpEl('p', 'pf-bio', p.bio));
