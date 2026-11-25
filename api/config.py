@@ -18,6 +18,12 @@ class Settings(BaseSettings):
         else "sqlite+aiosqlite:///" + os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "app.db").replace("\\", "/")
     )
 
+    # 기관용(/institution) 전용 데이터베이스: 비즈니스 DB 와 파일을 따로 쓴다(계정 · 학생 정보 분리, 나중에 기관용만 다른 서버로 옮기기 쉽게).
+    # 비워 두면 DATABASE_URL 옆의 '<이름>_inst.db' (예: data/app_inst.db)
+    INST_DATABASE_URL: str = ""
+    # 기관용 로그인 유효기간(일) — 비즈니스(30일)보다 짧게: 학교 공용 PC 에서 쓰는 경우가 많다
+    INST_TOKEN_DAYS: int = 7
+
     # 외부 공유 모드: ./share.sh 로 켜면 true. 코드 실행(내 컴퓨터에서 직접 실행됨)·API 문서·개발용 로그인을 모두 끈다
     PUBLIC_MODE: bool = False
     # 자바 GUI 창(CheerpJ)을 띄우는 별도 출처 주소 (예: https://gui.duresync.cloud). 비워 두면 같은 사이트 주소에서 띄운다.

@@ -416,6 +416,17 @@ powershell -ExecutionPolicy Bypass -File c:\backend\scripts\test_java.ps1
 
 ---
 
+### 🏫 기관용(/institution) 계정 — 비즈니스와 완전히 별개
+
+기관용은 비즈니스와 **계정 · DB 파일 · 로그인 토큰**이 모두 따로다. (학생 정보를 분리하고, 나중에 기관용만 다른 컨테이너·서버로 옮기기 쉽게)
+- 주소: `/institution/login`(선생님 로그인 · 학생 로그인) → `/institution/app`(기관용 첫 화면). API 는 `/api/inst/…`
+- 선생님(교수 · 교사 · 기관 담당자): 구글 로그인 → 기관을 만들면 **기관 코드**가 나온다 → 명단으로 학생을 등록하면 초기 비밀번호가 한 번만 보인다
+- 학생: **기관 코드 + 아이디 + 비밀번호**로 로그인(첫 로그인에서 비밀번호를 바꾼다). 소셜 계정이 없어도 쓸 수 있다
+- DB: 비즈니스 DB 옆의 `<이름>_inst.db`(기본 `data/app_inst.db`, `INST_DATABASE_URL` 로 바꿀 수 있다). 하루 한 번 `data/backups/inst-*.db.gz` 로 자동 백업(최근 `BACKUP_KEEP`개)
+- 토큰: 기관용 토큰에는 `typ=inst` 가 있어서 비즈니스 API 는 받아들이지 않는다(반대도 마찬가지). 로그인 유효기간은 `INST_TOKEN_DAYS`(기본 7일)
+- ★ 선생님 구글 로그인을 쓰려면 구글 클라우드 콘솔 → 사용자 인증 정보 → 같은 OAuth 클라이언트의 **승인된 리디렉션 URI** 에 `https://duresync.cloud/api/inst/auth/google/callback` 을 **추가**해야 한다 (기존 비즈니스 주소는 그대로 둔다)
+- 임시(로컬) 서버에서 `DEV_AUTO_LOGIN_EMAIL` 이 켜져 있으면 선생님 로그인은 구글 없이 바로 된다
+
 ## 운영 안내 (서버)
 
 **배포 뒤 점검 · 디스크 정리** — 서버에서 실행한다.

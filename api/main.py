@@ -70,6 +70,8 @@ ws_manager = ConnectionManager()
 async def lifespan(app: FastAPI):
     """서버 기동 시 DB 초기화 및 테이블 자동 생성"""
     await init_db()
+    from inst_db import init_inst_db
+    await init_inst_db()                                # 기관용 DB(비즈니스와 별도 파일)
     from services import live as live_hub
     live_hub.install()                                  # 저장되는 순간 화면으로 바로 알려주기 (WebSocket /ws/live)
     from database import async_session_maker
@@ -149,6 +151,8 @@ app.include_router(code_ai_router)
 app.include_router(voice_router)
 app.include_router(prefs_router)
 app.include_router(memos_router)
+from routers.inst import router as inst_router
+app.include_router(inst_router)               # 기관용(/institution): 계정·DB 가 비즈니스와 따로
 
 # 프론트엔드 UI 직접 서빙 (/ui 및 /app)
 DEFAULT_UI_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend"))
@@ -369,6 +373,8 @@ async def runner_install_ps1(request: Request):
 @app.get("/app", tags=["UI"], include_in_schema=False)
 @app.get("/business", tags=["UI"], include_in_schema=False)          # 비즈니스 소개 (로그인 전 첫 화면)
 @app.get("/institution", tags=["UI"], include_in_schema=False)       # 기관용 소개 (준비 중)
+@app.get("/institution/login", tags=["UI"], include_in_schema=False)       # 기관용 로그인
+@app.get("/institution/app", tags=["UI"], include_in_schema=False)         # 기관용 첫 화면 (기본 틀)
 @app.get("/app/{page:path}", tags=["UI"], include_in_schema=False)
 async def serve_ui(request: Request, page: str = ""):
     if "." in page.rsplit("/", 1)[-1]:      # /app/없는파일.js 같은 요청은 화면이 아니라 404

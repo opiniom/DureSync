@@ -36,6 +36,8 @@ def decode_access_token(token: str) -> Optional[dict]:
     """JWT 토큰 디코딩 및 검증"""
     try:
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        if payload.get("typ"):          # 기관용 등 다른 종류의 토큰(typ 표시가 있는 것)은 비즈니스 계정으로 쓸 수 없다 (사용자 번호가 같아도 다른 사람으로 오인하지 않게)
+            return None
         return payload
     except jwt.PyJWTError:
         return None

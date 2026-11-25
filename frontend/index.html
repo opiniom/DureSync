@@ -42,6 +42,10 @@ window.dureGreetIcon = function(n){
   /* 주소가 메인 홈(/) 또는 기관용(/institution)이면, 소개·홈 화면이 잠깐 보였다 바뀌지 않게 처음부터 그 화면을 보여준다 (설치한 앱은 해당 없음) */
   var pth = (location.pathname || '/').replace(/\/+$/, '') || '/';
   if(!sa && !window.__pwaPreview && (pth === '/' || pth === '/institution')) r.setAttribute('data-route', pth === '/' ? 'hub' : 'institution');
+  else if(!sa && !window.__pwaPreview && (pth === '/institution/login' || pth === '/institution/app')){          // 기관용 로그인 · 첫 화면: 기관용 로그인 정보(비즈니스와 별개)가 있으면 첫 화면, 없으면 로그인 화면
+    var ih = false; try{ ih = !!localStorage.getItem('sync_inst_token') || /[?&]itoken=/.test(q); }catch(e){}
+    r.setAttribute('data-route', ih ? 'instapp' : 'instlogin');
+  }
 }catch(e){} })();
 </script>
 <script>
@@ -433,7 +437,7 @@ window.dureGreetIcon = function(n){
           <button type="button" class="ld-ibtn" id="inTheme" onclick="ldToggleTheme()" aria-label="화면 모드 바꾸기" title="라이트 / 다크"><svg class="i" viewBox="0 0 24 24"><use href="#ic-moon"/></svg></button>
           <nav class="hb-pgs" aria-label="페이지 이동"><a href="/" onclick="return hbLink(event, 'hub')">메인 홈</a><a href="/business" onclick="return hbLink(event, 'landing')">비즈니스</a><span class="on" aria-current="page">기관용</span></nav>
           <a class="hb-homebtn" href="/" onclick="return hbLink(event, 'hub')">메인 홈</a>
-          <button type="button" class="ld-login" onclick="hbNotice()">도입 문의</button>
+          <button type="button" class="ld-login" id="inLoginBtn" onclick="instEnter()">기관용 로그인</button>
         </div>
       </div>
       <div class="ld-mega" id="inMega" aria-hidden="true"></div>
@@ -442,6 +446,57 @@ window.dureGreetIcon = function(n){
     <div class="hb-amb" aria-hidden="true"><i class="b b1"></i><i class="b b2"></i><i class="b b3"></i><i class="rg rg1"></i><i class="rg rg2"></i></div>
     <main class="ld-main" id="inMain"></main>
     <footer class="ld-foot hb-foot" id="inFoot"></footer>
+  </section>
+
+
+  <!-- ============ 기관용 로그인 (/institution/login) : 선생님 · 학생 따로 (비즈니스 계정과는 별개) ============ -->
+  <section class="view" data-view="instlogin" id="instlogin">
+    <div class="auth-wrap">
+      <div class="auth-card card in-auth">
+        <span class="bm auth-mark" role="img" aria-label="DureSync"></span>
+        <div class="auth-wordmark">DureSync</div>
+        <span class="chip in-auth-chip">기관용</span>
+        <p class="auth-tag">수업 속 팀 프로젝트를 위한 협업 공간</p>
+        <div class="in-tabs" role="tablist" aria-label="로그인 종류">
+          <button type="button" role="tab" id="inTabTeacher" class="on" aria-selected="true" onclick="instLoginTab('teacher')">선생님 로그인</button>
+          <button type="button" role="tab" id="inTabStudent" aria-selected="false" onclick="instLoginTab('student')">학생 로그인</button>
+        </div>
+        <div class="in-pane" id="inPaneTeacher" role="tabpanel" aria-labelledby="inTabTeacher">
+          <p class="auth-desc">교수 · 교사 · 기관 담당자는 구글 계정으로 로그인해요. 처음이면 기관을 만들고 학생을 등록할 수 있어요.</p>
+          <div class="auth-buttons">
+            <button type="button" class="oauth-btn google" onclick="instTeacherLogin()">
+              <svg viewBox="0 0 24 24"><path fill="#4285F4" d="M23.52 12.27c0-.85-.08-1.67-.22-2.45H12v4.63h6.47c-.28 1.5-1.13 2.77-2.4 3.62v3h3.88c2.27-2.09 3.57-5.17 3.57-8.8Z"/><path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.95-2.9l-3.88-3c-1.08.72-2.45 1.15-4.07 1.15-3.13 0-5.78-2.11-6.73-4.96H1.26v3.1C3.24 21.3 7.28 24 12 24Z"/><path fill="#FBBC05" d="M5.27 14.29a7.2 7.2 0 0 1 0-4.58v-3.1H1.26a12 12 0 0 0 0 10.78l4.01-3.1Z"/><path fill="#EA4335" d="M12 4.77c1.77 0 3.35.61 4.6 1.8l3.44-3.44C17.95 1.19 15.23 0 12 0 7.28 0 3.24 2.7 1.26 6.61l4.01 3.1C6.22 6.88 8.87 4.77 12 4.77Z"/></svg>
+              Google로 계속하기
+            </button>
+          </div>
+        </div>
+        <form class="in-pane in-form" id="inPaneStudent" role="tabpanel" aria-labelledby="inTabStudent" hidden onsubmit="return instStudentLogin(event)">
+          <p class="auth-desc">선생님께 받은 기관 코드와 아이디, 비밀번호로 로그인해요.</p>
+          <label>기관 코드<input type="text" id="inOrg" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="예: K7QM4X" required></label>
+          <label>아이디<input type="text" id="inLid" maxlength="40" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="학번 또는 선생님이 알려 준 아이디" required></label>
+          <label>비밀번호<input type="password" id="inPw" maxlength="100" autocomplete="current-password" required></label>
+          <p class="in-err" id="inStuErr" role="alert" hidden></p>
+          <button type="submit" class="btn primary" id="inStuBtn">로그인</button>
+        </form>
+        <p class="in-auth-note">기관용은 현재 개발 중이에요. 기관용 계정은 비즈니스 계정과 따로 써요.</p>
+        <p class="auth-terms">계속 진행하면 DureSync의 <a href="/terms" target="_blank" rel="noopener">이용약관</a> 및 <a href="/privacy" target="_blank" rel="noopener">개인정보 처리방침</a>에 동의하게 됩니다.</p>
+        <button class="auth-skip" onclick="goView('institution')">← 기관용 소개 보기</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 기관용 첫 화면 (/institution/app) : 기본 틀 ============ -->
+  <section class="view" data-view="instapp" id="instapp">
+    <header class="ia-head">
+      <div class="ia-head-in">
+        <span class="ia-brand"><span class="bm wm-mark" role="img" aria-hidden="true"></span><b>DureSync</b><span class="chip ia-chip" id="iaChip">기관용</span></span>
+        <div class="ia-act">
+          <span class="ia-user" id="iaUser"></span>
+          <button type="button" class="btn ghost ia-btn" onclick="instLogout()">로그아웃</button>
+        </div>
+      </div>
+    </header>
+    <main class="ia-main" id="iaMain"></main>
   </section>
 
   <!-- 구독창(더미) · 개발 중 안내 -->

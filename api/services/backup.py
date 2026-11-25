@@ -112,6 +112,12 @@ async def backup_loop() -> None:
                 path = await asyncio.to_thread(backup_once)
                 if path:
                     logger.info("DB 백업 완료: %s (%.1fMB)", os.path.basename(path), os.path.getsize(path) / 1048576)
+            from services import inst_backup                     # 기관용 DB(학생 계정)도 같은 주기로
+            iage = inst_backup.latest_age_seconds()
+            if iage is None or iage >= INTERVAL_SECONDS:
+                ipath = await asyncio.to_thread(inst_backup.backup_once)
+                if ipath:
+                    logger.info("기관용 DB 백업 완료: %s", os.path.basename(ipath))
         except asyncio.CancelledError:
             raise
         except Exception:

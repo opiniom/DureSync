@@ -502,6 +502,7 @@ function hbScroll(id){
 function hbLoginClick(){ if(authToken) goView('home'); else openLogin(); }
 function hbLoginState(){
   var b = document.getElementById('hbLogin'); if(b) b.textContent = authToken ? '앱 열기' : '로그인';
+  var ib = document.getElementById('inLoginBtn'); if(ib) ib.textContent = (typeof instToken !== 'undefined' && instToken) ? '기관용 열기' : '기관용 로그인';
   var s = document.getElementById('hbStart'); if(s) s.hidden = !!authToken;
   var q = document.getElementById('hbInquiry'); if(q) q.hidden = !!authToken && false;
 }
